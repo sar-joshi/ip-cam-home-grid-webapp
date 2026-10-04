@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Request } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 import { defaults } from "@homegrid/shared";
 
@@ -8,7 +8,33 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   browserName,
 }) => {
   const errors: string[] = [];
+  const pending = new Set<Request>();
+  const cancelledByReload = new Set<Request>();
+  const expectedAbortErrors = new Set<string>();
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/streams\/cam-/.test(request.url())
+    )
+      pending.add(request);
+  });
+  page.on("requestfinished", (request) => pending.delete(request));
+  page.on("requestfailed", (request) => {
+    pending.delete(request);
+    // Linux WebKit reports some reload-cancelled fetches as access-control page
+    // errors. Discount only requests this test cancelled that actually failed.
+    if (browserName === "webkit" && cancelledByReload.has(request)) {
+      const url = new URL(request.url());
+      expectedAbortErrors.add(
+        `/${url.host}${url.pathname} due to access control checks.`,
+      );
+    }
+  });
+  const reload = async () => {
+    pending.forEach((request) => cancelledByReload.add(request));
+    await page.reload();
+  };
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
@@ -47,7 +73,7 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
       })
     ).status(),
   ).toBe(200);
-  await page.reload();
+  await reload();
   // Three columns put every video in view on iPhone; offscreen resume is tested
   // separately because WebKit may defer autoplay outside the viewport.
   await expect(page.locator(".status-live")).toHaveCount(6, { timeout: 45000 });
@@ -107,7 +133,7 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     page.getByRole("button", { name: "Mute Camera 2", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Saved");
-  await page.reload();
+  await reload();
   await expect(page.getByRole("article").first()).toHaveAccessibleName(
     "Camera 2",
   );
@@ -133,5 +159,7 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await page.getByRole("button", { name: "Lock", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   expect((await context.request.get("/api/bootstrap")).status()).toBe(401);
-  expect(errors).toEqual([]);
+  expect(errors.filter((message) => !expectedAbortErrors.has(message))).toEqual(
+    [],
+  );
 });
