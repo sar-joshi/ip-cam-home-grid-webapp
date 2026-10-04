@@ -13,6 +13,9 @@ export interface MediaLease {
   location: string;
   expires: number;
 }
+// Background browsers throttle timers to a minute. Keep a bounded grace period
+// while continuing to revoke immediately on logout and session expiry.
+export const MEDIA_LEASE_MS = 120000;
 export class Media {
   private process?: ChildProcess;
   private configPath: string;
@@ -147,7 +150,7 @@ export class Media {
       const id = randomUUID();
       this.db
         .prepare("INSERT INTO homegrid_media VALUES (?, ?, ?, ?)")
-        .run(id, sessionId, location, Date.now() + 45000);
+        .run(id, sessionId, location, Date.now() + MEDIA_LEASE_MS);
       return { id, sdp: answer };
     } finally {
       const remaining = (this.pending.get(sessionId) ?? 1) - 1;
@@ -161,8 +164,33 @@ export class Media {
     );
     const now = Date.now();
     this.db.transaction(() =>
-      ids.forEach((id) => update.run(now + 45000, id, session, now)),
+      ids.forEach((id) => update.run(now + MEDIA_LEASE_MS, id, session, now)),
     )();
+  }
+  async patch(session: string, id: string, fragment: string) {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM homegrid_media WHERE id = ? AND session_id = ? AND expires > ?",
+      )
+      .get(id, session, Date.now()) as MediaLease | undefined;
+    if (!row) return false;
+    const response = await fetch(
+      `http://127.0.0.1:${this.config.mediaPort}${row.location}`,
+      {
+        method: "PATCH",
+        headers: {
+          ...this.headers(),
+          "Content-Type": "application/trickle-ice-sdpfrag",
+          "If-Match": "*",
+        },
+        body: fragment,
+        signal: AbortSignal.timeout(5000),
+        redirect: "error",
+      },
+    );
+    if (response.status === 404) return false;
+    if (response.status !== 204) throw new Error("ICE update unavailable");
+    return true;
   }
   async remove(session: string, id: string) {
     const row = this.db

@@ -6,7 +6,10 @@ export default defineConfig({
   timeout: 60000,
   use: { baseURL: "http://127.0.0.1:3000", trace: "retain-on-failure" },
   reporter: [["list"], ["html", { open: "never" }]],
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "webkit-mobile", use: { ...devices["iPhone 14 Pro"] } },
+  ],
   webServer: {
     command: "npx tsx scripts/test-stack.ts",
     url: "http://127.0.0.1:3000/login",

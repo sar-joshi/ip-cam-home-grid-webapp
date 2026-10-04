@@ -13,7 +13,6 @@ interface Props {
   quality: Quality;
   muted: boolean;
   stopped: boolean;
-  paused: boolean;
   focused: boolean;
   onToggle: (id: string) => void;
   onMute: (id: string) => void;
@@ -25,22 +24,21 @@ interface Props {
   onStatus: (camera: string, status: PlaybackStatus) => void;
 }
 export const CameraTile = memo(function CameraTile(props: Props) {
-  const { camera, quality, muted, stopped, paused, onLease, onStatus } = props;
+  const { camera, quality, muted, stopped, onLease, onStatus } = props;
   const video = useRef<HTMLVideoElement>(null);
+  const connection = useRef<Connection | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] =
     useState<PlaybackStatus>("Connecting");
   const [retry, setRetry] = useState(0);
   const [dropTarget, setDropTarget] = useState(false);
-  const status: PlaybackStatus = stopped
-    ? "Stopped"
-    : paused
-      ? "Paused"
-      : connectionStatus;
+  const status: PlaybackStatus = stopped ? "Stopped" : connectionStatus;
   useEffect(() => {
     onStatus(camera.id, status);
   }, [camera.id, status, onStatus]);
   useEffect(() => {
-    if (stopped || paused || !video.current) return;
+    if (stopped || !video.current) return;
+    const element = video.current;
+    let onscreen = true;
     const abort = new AbortController();
     let current: Connection | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -48,10 +46,22 @@ export const CameraTile = memo(function CameraTile(props: Props) {
       lastProgress = Date.now(),
       retryCount = 0,
       connecting = false;
+    const observer = new IntersectionObserver((entries) => {
+      onscreen = entries[0].isIntersecting;
+      lastProgress = Date.now();
+      if (onscreen && !document.hidden) current?.resume();
+    });
+    observer.observe(element);
+    const visibility = () => {
+      lastProgress = Date.now();
+      if (onscreen && !document.hidden) current?.resume();
+    };
+    document.addEventListener("visibilitychange", visibility);
     function reconnect() {
       if (abort.signal.aborted || retryTimer) return;
       current?.close();
       current = undefined;
+      connection.current = undefined;
       onLease(camera.id);
       setConnectionStatus("Reconnecting");
       const delay =
@@ -84,6 +94,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
           current.close();
           return;
         }
+        connection.current = current;
         onLease(camera.id, current.id);
         lastProgress = Date.now();
       } catch {
@@ -95,6 +106,10 @@ export const CameraTile = memo(function CameraTile(props: Props) {
     // Check only active video elements; frame progress stays outside React state.
     const stalledTimer = setInterval(() => {
       if (!video.current || !current) return;
+      if (document.hidden || !onscreen || video.current.paused) {
+        lastProgress = Date.now();
+        return;
+      }
       if (video.current.currentTime !== lastTime) {
         lastTime = video.current.currentTime;
         lastProgress = Date.now();
@@ -104,11 +119,14 @@ export const CameraTile = memo(function CameraTile(props: Props) {
     return () => {
       abort.abort();
       current?.close();
+      connection.current = undefined;
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", visibility);
       onLease(camera.id);
       clearTimeout(retryTimer);
       clearInterval(stalledTimer);
     };
-  }, [camera.id, quality, stopped, paused, retry, onLease]);
+  }, [camera.id, quality, stopped, retry, onLease]);
   return (
     <article
       className={`camera-tile ${props.focused ? "focused-tile" : ""} ${dropTarget ? "drop-target" : ""}`}
@@ -149,9 +167,11 @@ export const CameraTile = memo(function CameraTile(props: Props) {
           <Icon name="grip" size={15} />
         </button>
         <h2 onDoubleClick={() => props.onFocus(camera.id)}>{camera.name}</h2>
-        <span className={`status status-${status.toLowerCase()}`}>
+        <span
+          className={`status status-${status.toLowerCase().replaceAll(" ", "-")}`}
+        >
           <span />
-          {status}
+          <span className="status-label">{status}</span>
         </span>
       </header>
       <div
@@ -172,12 +192,23 @@ export const CameraTile = memo(function CameraTile(props: Props) {
             <span>
               {status === "Stopped"
                 ? "Stream stopped"
-                : status === "Paused"
-                  ? "Paused while tab is hidden"
+                : status === "Tap to play"
+                  ? "Tap to play video"
                   : status === "Reconnecting"
                     ? "Reconnecting to camera…"
                     : "Connecting to camera…"}
             </span>
+            {status === "Tap to play" ? (
+              <button
+                className="text-button"
+                onClick={() => {
+                  if (connection.current) connection.current.resume();
+                  else void video.current?.play().catch(() => {});
+                }}
+              >
+                Play video
+              </button>
+            ) : null}
             {stopped ? (
               <button
                 className="text-button"
@@ -206,7 +237,14 @@ export const CameraTile = memo(function CameraTile(props: Props) {
         <span className="tile-control-spacer" />
         <button
           className="icon-button"
-          onClick={() => props.onMute(camera.id)}
+          onClick={() => {
+            if (video.current) {
+              video.current.muted = !muted;
+              video.current.defaultMuted = !muted;
+            }
+            props.onMute(camera.id);
+            connection.current?.resume();
+          }}
           aria-label={`${muted ? "Unmute" : "Mute"} ${camera.name}`}
           title={muted ? "Unmute" : "Mute"}
           aria-pressed={!muted}

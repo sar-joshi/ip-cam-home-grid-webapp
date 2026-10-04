@@ -4,13 +4,13 @@ A private Next.js camera grid for six Dahua NVR channels. Vercel hosts the inter
 
 ## What it does
 
-- Select cameras and choose one, two, or three grid columns. Small screens use a single column.
+- Select cameras and choose one, two, or three grid columns on desktop and mobile.
 - Drag cameras to swap positions; keyboard users can move tiles with the grip's left/right arrow keys.
 - Mute, stop/start, and switch Main/Sub 1/Sub 2 independently per camera.
 - Double-click a camera or press its focus button to enlarge it; Escape restores the grid. Hidden tiles release their streams and explicitly stopped cameras stay stopped.
 - Save camera selection, ordering, quality, mute, and stop choices in local SQLite.
 - Use one household password with an eight-hour maximum session. Lock closes the current session's media streams and returns to the password screen.
-- Pause video while the browser tab is hidden. Reconnect with capped backoff when a stream stalls or the connection drops.
+- Keep healthy video connections when switching tabs or desktops. Resume browser-paused video on return or scroll, with a Play video button if autoplay needs a tap. Reconnect with capped backoff when an active stream stalls or its connection drops.
 
 ## Architecture
 
@@ -54,11 +54,11 @@ MediaMTX reads RTSP only and performs packet forwarding rather than video transc
 
 Browsers need compatible codecs. Use standard **H.264 without B-frames**, preferably Baseline, and disable AI/Smart/plus codec modes for the streams used by the web viewer. H.265 main streams can still be used by the native app, but are not a portable browser target. This app changes `subtype` only; configure encoding in Dahua manually. [MediaMTX browser codec guidance](https://mediamtx.org/docs/features/webrtc-specific-features).
 
-| Stream | Subtype | Starting settings |
-|---|---|---|
-| Main | 0 | Highest supported resolution; 20–25 fps; begin at 6–10 Mbps for 4K H.264 and adjust to the scene |
-| Sub 1 | 1 | 1280×720 if supported; 10–15 fps; 0.7–1.5 Mbps |
-| Sub 2 | 2 | 352×288 or 640×360; 5–10 fps; 0.2–0.5 Mbps |
+| Stream | Subtype | Starting settings                                                                                |
+| ------ | ------- | ------------------------------------------------------------------------------------------------ |
+| Main   | 0       | Highest supported resolution; 20–25 fps; begin at 6–10 Mbps for 4K H.264 and adjust to the scene |
+| Sub 1  | 1       | 1280×720 if supported; 10–15 fps; 0.7–1.5 Mbps                                                   |
+| Sub 2  | 2       | 352×288 or 640×360; 5–10 fps; 0.2–0.5 Mbps                                                       |
 
 Enable both substreams. Set an I-frame interval of roughly one second, e.g. 15 at 15 fps. Use CBR initially. These are starting points, not model-specific guarantees; use the resolutions offered by each camera. Your screenshot's 352×288 Sub 1 is usable, but cannot provide HD detail. Audio mute works when the source contains a browser-supported track (Opus, G.711 or supported G.722); AAC may need separate audio transcoding, which this lightweight version does not perform.
 
@@ -82,7 +82,9 @@ Authentication uses Better Auth with SQLite-backed opaque sessions and HttpOnly,
 
 State-changing requests require the exact configured viewer origin. The frontend uses a nonce-based CSP, denies framing, disables camera/microphone capture, avoids private-response caching, and serves no third-party scripts or fonts. Camera URLs and credentials are absent from frontend props and API DTOs. HTTP request bodies are bounded. Errors/logs omit upstream RTSP URLs and credentials.
 
-Each media connection belongs to its login session. A 15-second heartbeat renews a 45-second lease. Logout revokes its streams immediately; expiry, revoked sessions or a disconnected client are cleaned up within five seconds after lease/session expiry. Idle source connections close one second after the last viewer. Stopping/focusing/closing tiles releases browser peers/tracks. A stalled source retries with backoff capped around 30 seconds. Authentication failures keep playback closed.
+Each media connection belongs to its login session. A 15-second heartbeat continues in background tabs and renews a two-minute lease, allowing for browsers that throttle timers to a minute. Logout revokes its streams immediately; expiry, revoked sessions or a disconnected client are cleaned up within five seconds after lease/session expiry. A fully suspended browser or sleeping device can still lose its lease and reconnect on return. Idle source connections close one second after the last viewer. Stopping/focusing/closing tiles releases browser peers/tracks. A stalled source retries with backoff capped around 30 seconds; hidden, offscreen or browser-paused videos do not trigger false stall retries. Authentication failures keep playback closed.
+
+WebRTC offers are sent immediately, with subsequent ICE candidates delivered as authenticated, origin-checked, rate-limited updates to opaque sessions owned by the current login. No camera credentials enter browser signaling. Video readiness is registered before negotiation, so early Safari/WebKit playback cannot leave a decoded camera labelled Connecting.
 
 Change the household password locally with `npm run password:reset`; this revokes all sessions. Back up the private `state/` directory and `gateway.env` together using encrypted local backups. To migrate to the Pi, stop the Mac gateway/tunnel, transfer those private files securely, install Node 24 and verified Linux arm64 MediaMTX, update the LAN IP/binary path, and start the same named tunnel. Use a separate read-only NVR account and keep dependencies patched.
 
@@ -92,10 +94,10 @@ Change the household password locally with `npm run password:reset`; this revoke
 npm run verify
 npm audit --audit-level=high
 npm run install:media
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:e2e
 ```
 
-E2E requires FFmpeg and a free localhost port 3000. It starts isolated synthetic H.264 RTSP cameras, a real MediaMTX gateway and the production Next.js server. It does not read your private setup, native app settings, or Keychain. Tests cover actual decoded WebRTC video, authentication, origins, persistence, tile controls, focus/restore, mobile layout, accessibility, and logout. GitHub Actions runs the same checks; feature branches merge through pull requests after required checks pass.
+E2E requires FFmpeg and free localhost ports 3000, 18787, 18554, 18889 and 18189. It starts isolated synthetic H.264/G.711 RTSP cameras, a real MediaMTX gateway and the production Next.js server, alongside the installed private gateway. It does not read your private setup, native app settings, or Keychain. Chromium and iPhone WebKit tests cover actual decoded WebRTC video, Sub 2 startup, delayed readiness, blocked-autoplay recovery, background continuity, offscreen pause/resume, all mobile column choices at 320/390 pixels, authentication, origins, persistence, tile controls, focus/restore, accessibility, and logout. GitHub Actions runs the same checks; feature branches merge through pull requests after required checks pass.
 
 For a synthetic local preview: `npx tsx scripts/test-stack.ts`, then visit `http://127.0.0.1:3000` and use the documented **test-only** password `synthetic-viewer-password`. This stack creates a temporary database with fake NVR credentials; it never creates a production/demo bypass.

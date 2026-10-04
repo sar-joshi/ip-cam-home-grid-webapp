@@ -25,6 +25,7 @@ const config = readConfig({
   GATEWAY_LAN_IP: "127.0.0.1",
   NVR_HOST: "127.0.0.1",
   NVR_PORT: "18554",
+  GATEWAY_PORT: "18787",
   NVR_USERNAME: "fixture",
   NVR_PASSWORD: "synthetic-camera-only",
   HOMEGRID_STATE_DIR: dir,
@@ -58,7 +59,7 @@ writeFileSync(
 );
 children.push(spawn(config.mediaBinary, [fixtureConfig], { stdio: "ignore" }));
 await new Promise((resolve) => setTimeout(resolve, 700));
-const fixtureVideo = resolve(".tools/fixture.mp4");
+const fixtureVideo = resolve(".tools/fixture.mov");
 const generate = spawn(
   "ffmpeg",
   [
@@ -70,9 +71,18 @@ const generate = spawn(
     "lavfi",
     "-i",
     "testsrc2=size=640x360:rate=15",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=660:sample_rate=8000",
     "-t",
     "12",
-    "-an",
+    "-c:a",
+    "pcm_mulaw",
+    "-ar",
+    "8000",
+    "-ac",
+    "1",
     "-c:v",
     "libx264",
     "-profile:v",
@@ -109,8 +119,7 @@ children.push(
       "-1",
       "-i",
       fixtureVideo,
-      "-an",
-      "-c:v",
+      "-c",
       "copy",
       "-f",
       "rtsp",
@@ -135,7 +144,7 @@ db.prepare("DELETE FROM session").run();
 const media = new Media(config, db);
 await media.start();
 const gateway = makeServer(config, db, media);
-await gateway.listen({ host: "127.0.0.1", port: 8787 });
+await gateway.listen({ host: "127.0.0.1", port: config.port });
 mkdirSync(".tools", { recursive: true });
 writeFileSync(".tools/test-token", token, { mode: 0o600 });
 writeFileSync(".tools/test-stack.pid", String(process.pid), { mode: 0o600 });
@@ -147,7 +156,7 @@ const web = spawn(
     env: {
       ...process.env,
       HOMEGRID_APP_ORIGIN: config.appOrigin,
-      GATEWAY_URL: "http://127.0.0.1:8787",
+      GATEWAY_URL: `http://127.0.0.1:${config.port}`,
       GATEWAY_SERVICE_TOKEN: token,
     },
     stdio: "inherit",

@@ -37,7 +37,12 @@ test("gateway authentication, persistent limits, sessions, origin checks, and pr
   });
   db.prepare("DELETE FROM session").run();
   let removed = false;
+  let patchedSession: string | undefined;
   const media = {
+    patch: async (session: string) => {
+      patchedSession = session;
+      return true;
+    },
     removeAll: async () => {
       removed = true;
     },
@@ -113,6 +118,43 @@ test("gateway authentication, persistent limits, sessions, origin checks, and pr
       .map((value) => String(value).split(";")[0])
       .join("; ");
     const authed = { ...headers, cookie };
+    const iceUpdate = {
+      method: "PATCH" as const,
+      url: "/internal/streams/sessions/64bde1c7-99d9-4285-9e10-cedd73343c32",
+      headers: { ...authed, "content-type": "application/trickle-ice-sdpfrag" },
+      payload: "a=ice-ufrag:fixture\r\na=ice-pwd:fixture\r\n",
+    };
+    assert.equal(
+      (
+        await server.inject({
+          ...iceUpdate,
+          headers: {
+            ...headers,
+            "content-type": "application/trickle-ice-sdpfrag",
+          },
+        })
+      ).statusCode,
+      401,
+    );
+    assert.equal(
+      (
+        await server.inject({
+          ...iceUpdate,
+          headers: { ...iceUpdate.headers, origin: "https://evil.example" },
+        })
+      ).statusCode,
+      403,
+    );
+    assert.equal(
+      (await server.inject({ ...iceUpdate, payload: "invalid" })).statusCode,
+      400,
+    );
+    assert.equal(patchedSession, undefined);
+    assert.equal((await server.inject(iceUpdate)).statusCode, 204);
+    assert.equal(
+      patchedSession,
+      (db.prepare("SELECT id FROM session LIMIT 1").get() as { id: string }).id,
+    );
     const bootstrap = await server.inject({
       url: "/internal/bootstrap",
       headers: authed,
@@ -152,6 +194,7 @@ test("gateway authentication, persistent limits, sessions, origin checks, and pr
       200,
     );
     assert.equal(removed, true);
+    assert.equal((await server.inject(iceUpdate)).statusCode, 401);
     assert.equal(
       (await server.inject({ url: "/internal/bootstrap", headers: authed }))
         .statusCode,

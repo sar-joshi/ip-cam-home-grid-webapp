@@ -20,7 +20,6 @@ export function Viewer({
   const [preferences, setPreferences] = useState(initialPreferences);
   const [focused, setFocused] = useState<string | null>(null);
   const [chooser, setChooser] = useState(false);
-  const [hidden, setHidden] = useState(false);
   const [locked, setLocked] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Saved");
   const [statuses, setStatuses] = useState<Record<string, PlaybackStatus>>({});
@@ -144,7 +143,6 @@ export function Viewer({
   }, [preferences]);
   useEffect(() => {
     alive.current = true;
-    const visibility = () => setHidden(document.hidden);
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setFocused(null);
@@ -169,25 +167,29 @@ export function Viewer({
           keepalive: true,
         }).catch(() => {});
     };
-    visibility();
-    document.addEventListener("visibilitychange", visibility);
     window.addEventListener("keydown", key);
     window.addEventListener("pagehide", pageHide);
+    const pageShow = (event: PageTransitionEvent) => {
+      // Restored page snapshots contain closed peers and possibly expired auth.
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", pageShow);
     return () => {
       alive.current = false;
-      document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("keydown", key);
       window.removeEventListener("pagehide", pageHide);
+      window.removeEventListener("pageshow", pageShow);
     };
   }, []);
   useEffect(() => {
-    if (hidden || locked) return;
+    if (locked) return;
     const heartbeat = async () => {
       try {
         const response = await fetch("/api/heartbeat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: [...leases.current.values()] }),
+          keepalive: true,
         });
         if (response.status === 401) {
           setLocked(true);
@@ -197,11 +199,18 @@ export function Viewer({
         /* Leases expire at the gateway if it cannot be reached. */
       }
     };
+    const visibility = () => {
+      void heartbeat();
+    };
+    document.addEventListener("visibilitychange", visibility);
     const timer = setInterval(() => {
       void heartbeat();
     }, 15000);
-    return () => clearInterval(timer);
-  }, [hidden, locked]);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [locked]);
   async function lock() {
     setLocked(true);
     await saveQueue.current.catch(() => {});
@@ -219,10 +228,7 @@ export function Viewer({
   const visible = focused ? [focused] : preferences.slots;
   const liveCount = visible.filter(
     (id) =>
-      !locked &&
-      !hidden &&
-      !preferences.cameras[id].stopped &&
-      statuses[id] === "Live",
+      !locked && !preferences.cameras[id].stopped && statuses[id] === "Live",
   ).length;
   const allStopped =
     preferences.slots.length > 0 &&
@@ -366,7 +372,6 @@ export function Viewer({
                   key={id}
                   camera={camera}
                   {...preferences.cameras[id]}
-                  paused={hidden}
                   focused={focused === id}
                   onToggle={toggle}
                   onMute={mute}
