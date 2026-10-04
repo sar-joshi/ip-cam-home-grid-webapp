@@ -5,6 +5,8 @@ import {
   normalizePreferences,
   swapSlots,
   preferencesSchema,
+  fallbackQuality,
+  audioFallbackQuality,
 } from "@homegrid/shared";
 import { readConfig, rtspUrl } from "../apps/gateway/src/config.ts";
 const cameras = [
@@ -28,6 +30,18 @@ test("RTSP source escapes all credentials and selects channel and quality", () =
     assert.equal(decodeURIComponent(url.password), fakeEnv.NVR_PASSWORD);
     assert.equal(url.searchParams.get("channel"), "6");
     assert.equal(url.searchParams.get("subtype"), quality);
+  }
+});
+test("fallbacks match channel capabilities without removing quality options", () => {
+  for (let channel = 1; channel <= 6; channel++) {
+    const camera = { id: `cam-${channel}`, name: "Fixture", channel };
+    assert.equal(fallbackQuality(camera), channel <= 2 ? "2" : "1");
+    assert.equal(
+      audioFallbackQuality(camera, "2"),
+      channel <= 2 ? "1" : undefined,
+    );
+    assert.equal(audioFallbackQuality(camera, "0"), undefined);
+    assert.equal(audioFallbackQuality(camera, "1"), undefined);
   }
 });
 test("preferences preserve explicit stops and quality while removing unknown cameras", () => {

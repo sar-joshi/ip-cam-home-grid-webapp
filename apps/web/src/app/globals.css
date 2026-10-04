@@ -458,6 +458,14 @@ video {
 .tile-control-spacer {
   flex: 1;
 }
+.tile-notice {
+  margin: 0;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: #a7bdc7;
+  border-top: 1px solid #283943;
+  overflow-wrap: anywhere;
+}
 .focus-grid {
   max-width: min(1500px, calc((100dvh - 253px) * 16 / 9));
   margin: 0 auto;

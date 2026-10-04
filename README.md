@@ -7,6 +7,8 @@ A private Next.js camera grid for six Dahua NVR channels. Vercel hosts the inter
 - Select cameras and choose one, two, or three grid columns on desktop and mobile.
 - Drag cameras to swap positions; keyboard users can move tiles with the grip's left/right arrow keys.
 - Mute, stop/start, and switch Main/Sub 1/Sub 2 independently per camera.
+- Keep all quality choices visible, with automatic fallback to Sub 2 for NVR channels 1–2 and Sub 1 for channels 3–6 when the selected stream fails. The working choice is saved.
+- When unmuted Sub 2 on channels 1–2 delivers no audio packets, receive audio from Sub 1 through an additional audio-only connection. A tile note identifies the audio source. Video remains on Sub 2; no video is transcoded.
 - Double-click a camera or press its focus button to enlarge it; Escape restores the grid. Hidden tiles release their streams and explicitly stopped cameras stay stopped.
 - Save camera selection, ordering, quality, mute, and stop choices in local SQLite.
 - Use one household password with an eight-hour maximum session. Lock closes the current session's media streams and returns to the password screen.
@@ -60,7 +62,7 @@ Browsers need compatible codecs. Use standard **H.264 without B-frames**, prefer
 | Sub 1  | 1       | 1280×720 if supported; 10–15 fps; 0.7–1.5 Mbps                                                   |
 | Sub 2  | 2       | 352×288 or 640×360; 5–10 fps; 0.2–0.5 Mbps                                                       |
 
-Enable both substreams. Set an I-frame interval of roughly one second, e.g. 15 at 15 fps. Use CBR initially. These are starting points, not model-specific guarantees; use the resolutions offered by each camera. Your screenshot's 352×288 Sub 1 is usable, but cannot provide HD detail. Audio mute works when the source contains a browser-supported track (Opus, G.711 or supported G.722); AAC may need separate audio transcoding, which this lightweight version does not perform.
+Enable the substreams your camera supports. Set an I-frame interval of roughly one second, e.g. 15 at 15 fps. Use CBR initially. These are starting points, not model-specific guarantees; use the resolutions offered by each camera. Your screenshot's 352×288 Sub 1 is usable, but cannot provide HD detail. Enable audio separately for each stream in Dahua and use G.711A at 8 kHz where available. Audio mute works when the source contains a browser-supported track (Opus, G.711 or supported G.722); AAC may need separate audio transcoding, which this lightweight version does not perform. The Sub 1 audio fallback accommodates this household's silent Sub 2 feeds; it cannot supply audio when Sub 1 itself has no working audio.
 
 ## Cloudflare and Vercel
 

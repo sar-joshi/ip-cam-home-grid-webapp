@@ -1,6 +1,12 @@
 "use client";
 import { useEffect, useRef, useState, memo } from "react";
-import { qualityLabels, type Camera, type Quality } from "@homegrid/shared";
+import {
+  qualityLabels,
+  fallbackQuality,
+  audioFallbackQuality,
+  type Camera,
+  type Quality,
+} from "@homegrid/shared";
 import {
   connectCamera,
   type Connection,
@@ -24,13 +30,16 @@ interface Props {
   onStatus: (camera: string, status: PlaybackStatus) => void;
 }
 export const CameraTile = memo(function CameraTile(props: Props) {
-  const { camera, quality, muted, stopped, onLease, onStatus } = props;
+  const { camera, quality, muted, stopped, onLease, onStatus, onQuality } =
+    props;
   const video = useRef<HTMLVideoElement>(null);
   const connection = useRef<Connection | undefined>(undefined);
   const [connectionStatus, setConnectionStatus] =
     useState<PlaybackStatus>("Connecting");
   const [retry, setRetry] = useState(0);
   const [dropTarget, setDropTarget] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [audioFallback, setAudioFallback] = useState(false);
   const status: PlaybackStatus = stopped ? "Stopped" : connectionStatus;
   useEffect(() => {
     onStatus(camera.id, status);
@@ -63,6 +72,14 @@ export const CameraTile = memo(function CameraTile(props: Props) {
       current = undefined;
       connection.current = undefined;
       onLease(camera.id);
+      const fallback = fallbackQuality(camera);
+      if (quality !== fallback) {
+        setNotice(
+          `${qualityLabels[quality]} unavailable. Using ${qualityLabels[fallback]}.`,
+        );
+        onQuality(camera.id, fallback);
+        return;
+      }
       setConnectionStatus("Reconnecting");
       const delay =
         Math.min(30000, 1000 * 2 ** Math.min(retryCount++, 5)) +
@@ -89,6 +106,11 @@ export const CameraTile = memo(function CameraTile(props: Props) {
             }
           },
           reconnect,
+          {
+            audioFallback: audioFallbackQuality(camera, quality),
+            onAudioLease: (id) => onLease(`${camera.id}:audio`, id),
+            onAudioFallback: setAudioFallback,
+          },
         );
         if (abort.signal.aborted) {
           current.close();
@@ -126,7 +148,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
       clearTimeout(retryTimer);
       clearInterval(stalledTimer);
     };
-  }, [camera.id, quality, stopped, retry, onLease]);
+  }, [camera, quality, stopped, retry, onLease, onQuality]);
   return (
     <article
       className={`camera-tile ${props.focused ? "focused-tile" : ""} ${dropTarget ? "drop-target" : ""}`}
@@ -224,9 +246,10 @@ export const CameraTile = memo(function CameraTile(props: Props) {
         <select
           aria-label={`${camera.name} quality`}
           value={quality}
-          onChange={(event) =>
-            props.onQuality(camera.id, event.target.value as Quality)
-          }
+          onChange={(event) => {
+            setNotice("");
+            props.onQuality(camera.id, event.target.value as Quality);
+          }}
         >
           {Object.entries(qualityLabels).map(([value, label]) => (
             <option key={value} value={value}>
@@ -246,7 +269,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
             connection.current?.resume();
           }}
           aria-label={`${muted ? "Unmute" : "Mute"} ${camera.name}`}
-          title={muted ? "Unmute" : "Mute"}
+          title={`${muted ? "Unmute" : "Mute"}${audioFallback ? " (audio from Sub 1)" : ""}`}
           aria-pressed={!muted}
         >
           <Icon name={muted ? "mute" : "sound"} />
@@ -281,6 +304,13 @@ export const CameraTile = memo(function CameraTile(props: Props) {
           <Icon name={props.focused ? "collapse" : "expand"} />
         </button>
       </footer>
+      {notice || audioFallback ? (
+        <p className="tile-notice" aria-live="polite">
+          {notice}
+          {notice && audioFallback ? " " : ""}
+          {audioFallback ? "Audio from Sub 1." : ""}
+        </p>
+      ) : null}
     </article>
   );
 });
