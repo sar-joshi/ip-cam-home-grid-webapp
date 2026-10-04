@@ -29,7 +29,9 @@ Vercel handles the interface, authentication requests and WebRTC signaling. The 
 
 ## Snapshots and clips
 
-Use the snapshot button to download a PNG at the selected stream's resolution. Use Record, then Stop recording, to save a clip. Compatible browsers use WebM with VP8/Opus; MP4 is used when WebM is unavailable. The actual recorder output controls the file extension. The Save and Share controls under Recent captures let you download again or use your device's share sheet, including Files on iPhone.
+Snapshot creates a PNG at the selected stream's resolution. Record, then Stop recording, creates a clip. Capture preview lets you play the result on the device, choose Photos / Share, or Save to Files. On iPhone, choose Save Image or Save Video from the native share sheet to add it to Photos; browsers cannot write directly to the Photos library. Captures are no longer automatically downloaded unless Lock needs to preserve an active clip before leaving the viewer.
+
+Recording prefers H.264/AAC MP4 when the browser advertises support, with WebM fallback for other encoders. G.711 camera audio is resampled locally to 48 kHz for AAC while recording. The original live stream is unaffected. The actual recorder output controls the file extension. Recent captures retains the latest six temporary preview, save and share links.
 
 Unmute before starting to include available camera audio. A muted camera records video only. Quality and mute changes are disabled during recording to keep the clip's tracks stable. Stopping or hiding a camera ends its clip; Lock finalizes active clips before closing connections. Capture stops cloned tracks, leaving live playback intact.
 

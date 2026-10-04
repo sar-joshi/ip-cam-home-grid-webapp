@@ -50,9 +50,9 @@ export async function snapshot(
 
 export function recordingMimeType(supported: (type: string) => boolean) {
   return [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
     "video/webm;codecs=vp8,opus",
     "video/webm",
-    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
     "video/mp4",
   ].find(supported);
 }
@@ -92,16 +92,42 @@ export async function record(
     );
   if (!selected.some((track) => track.kind === "video"))
     throw new Error("The video stream ended before recording started.");
-  const tracks = selected.map((track) => track.clone());
-  const stream = new MediaStream(tracks);
   const supportedType = recordingMimeType((type) =>
     MediaRecorder.isTypeSupported(type),
   );
   if (!supportedType) {
-    tracks.forEach((track) => track.stop());
     throw new Error("This browser cannot record this video format.");
   }
   const mimeType: string = supportedType;
+  const tracks = selected.map((track) => track.clone());
+  let stream = new MediaStream(tracks);
+  let audioContext: AudioContext | undefined;
+  const release = () => {
+    stream.getTracks().forEach((track) => track.stop());
+    tracks.forEach((track) => track.stop());
+    void audioContext?.close();
+  };
+  // Camera G.711 arrives at 8 kHz. Resample locally for the native AAC encoder;
+  // its input must not depend on the camera's telephony sample rate.
+  if (mimeType.startsWith("video/mp4") && stream.getAudioTracks().length) {
+    try {
+      audioContext = new AudioContext({ sampleRate: 48000 });
+      await audioContext.resume();
+      signal.throwIfAborted();
+      const input = audioContext.createMediaStreamSource(
+        new MediaStream(stream.getAudioTracks()),
+      );
+      const output = audioContext.createMediaStreamDestination();
+      input.connect(output);
+      stream = new MediaStream([
+        ...stream.getVideoTracks(),
+        ...output.stream.getAudioTracks(),
+      ]);
+    } catch {
+      release();
+      throw new Error("Audio recording could not start. Try recording muted.");
+    }
+  }
   let recorder: MediaRecorder;
   try {
     recorder = new MediaRecorder(stream, {
@@ -113,7 +139,7 @@ export async function record(
       audioBitsPerSecond: 128000,
     });
   } catch {
-    tracks.forEach((track) => track.stop());
+    release();
     throw new Error("Recording could not start in this browser.");
   }
   const chunks: Blob[] = [];
@@ -157,7 +183,7 @@ export async function record(
     finalized = true;
     clearTimeout(timer);
     clearTimeout(stopTimer);
-    tracks.forEach((track) => track.stop());
+    release();
     signal.removeEventListener("abort", stop);
     try {
       if (chunks.length) {
@@ -187,7 +213,7 @@ export async function record(
     recorder.start(1000);
   } catch {
     clearTimeout(timer);
-    tracks.forEach((track) => track.stop());
+    release();
     throw new Error("Recording could not start in this browser.");
   }
   signal.addEventListener("abort", stop, { once: true });
