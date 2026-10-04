@@ -28,6 +28,7 @@ export function Viewer({
   const savedRef = useRef(JSON.stringify(initialPreferences));
   const alive = useRef(true);
   const saveQueue = useRef(Promise.resolve());
+  const pendingWrites = useRef(0);
   const onLease = useCallback((camera: string, id?: string) => {
     if (id) leases.current.set(camera, id);
     else leases.current.delete(camera);
@@ -112,9 +113,13 @@ export function Viewer({
   useEffect(() => {
     prefsRef.current = preferences;
     const value = JSON.stringify(preferences);
-    if (value === savedRef.current) return;
+    if (value === savedRef.current && pendingWrites.current === 0) {
+      setSaveStatus("Saved");
+      return;
+    }
     setSaveStatus("Saving…");
     const timer = setTimeout(() => {
+      pendingWrites.current++;
       // Serialize writes so a slower earlier request cannot overwrite newer choices.
       saveQueue.current = saveQueue.current
         .catch(() => {})
@@ -136,6 +141,8 @@ export function Viewer({
               setSaveStatus("Saved");
           } catch {
             if (alive.current) setSaveStatus("Could not save");
+          } finally {
+            pendingWrites.current--;
           }
         });
     }, 450);

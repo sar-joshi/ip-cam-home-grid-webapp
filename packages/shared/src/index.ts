@@ -13,6 +13,16 @@ export const cameraSchema = z.object({
   channel: z.number().int().min(1).max(64),
 });
 export type Camera = z.infer<typeof cameraSchema>;
+// This household's channels 1–2 provide Sub 2; channels 3–6 provide Sub 1.
+export function fallbackQuality(camera: Camera): Quality {
+  return camera.channel <= 2 ? "2" : "1";
+}
+export function audioFallbackQuality(
+  camera: Camera,
+  quality: Quality,
+): Quality | undefined {
+  return camera.channel <= 2 && quality === "2" ? "1" : undefined;
+}
 export const camerasSchema = z
   .array(cameraSchema)
   .min(1)

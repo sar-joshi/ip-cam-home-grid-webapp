@@ -46,6 +46,35 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
   ).toBe(200);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
+    // The first Sub 2 peer has video but no audio, matching this Dahua NVR.
+    const addTransceiver = RTCPeerConnection.prototype.addTransceiver;
+    const firstVideoPeer = new WeakSet<RTCPeerConnection>();
+    let foundVideoPeer = false;
+    RTCPeerConnection.prototype.addTransceiver = function (track, init) {
+      if (track === "video" && !foundVideoPeer) {
+        firstVideoPeer.add(this);
+        foundVideoPeer = true;
+      }
+      return addTransceiver.call(
+        this,
+        track,
+        track === "audio" && firstVideoPeer.has(this)
+          ? { ...init, direction: "inactive" }
+          : init,
+      );
+    };
+    const nativePeer = window.RTCPeerConnection;
+    (window as typeof window & { audioPeers: RTCPeerConnection[] }).audioPeers =
+      [];
+    window.RTCPeerConnection = new Proxy(nativePeer, {
+      construct(Target, args) {
+        const peer = new Target(...args);
+        (
+          window as typeof window & { audioPeers: RTCPeerConnection[] }
+        ).audioPeers.push(peer);
+        return peer;
+      },
+    });
     // Reproduce an autoplay refusal without breaking the underlying WebRTC peer.
     let allowPlayback = false;
     const originalPlay = HTMLMediaElement.prototype.play;
@@ -226,6 +255,75 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel("Grid columns").selectOption("2");
   await first.scrollIntoViewIfNeeded();
+  await first
+    .getByRole("button", { name: "Unmute Camera 1", exact: true })
+    .click();
+  await expect(first.getByText("Audio from Sub 1.")).toBeVisible({
+    timeout: 10000,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const peers = (
+          window as typeof window & { audioPeers: RTCPeerConnection[] }
+        ).audioPeers;
+        const audioPeer = peers.find(
+          (peer) => peer.getTransceivers().length === 1,
+        );
+        if (!audioPeer) return false;
+        return [...(await audioPeer.getStats()).values()].some(
+          (report) =>
+            report.type === "inbound-rtp" &&
+            report.kind === "audio" &&
+            report.bytesReceived > 0,
+        );
+      }),
+    )
+    .toBe(true);
+  expect(creates).toBe(7);
+  expect(
+    await first
+      .locator("video")
+      .evaluate(
+        (video) => ((video as HTMLVideoElement).srcObject as MediaStream).id,
+      ),
+  ).toBe(streamIds[0]);
+  // Preserve the three choices; unsupported choices should select and save the
+  // camera's preferred fallback once rather than alternating failed profiles.
+  await page.route("**/api/streams/cam-3/2", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: '{"error":"Camera unavailable"}',
+    }),
+  );
+  await page.route("**/api/streams/cam-1/0", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: '{"error":"Camera unavailable"}',
+    }),
+  );
+  await page.getByLabel("Camera 3 quality", { exact: true }).selectOption("2");
+  await expect(
+    page.getByLabel("Camera 3 quality", { exact: true }),
+  ).toHaveValue("1");
+  await expect(
+    page
+      .getByRole("article", { name: "Camera 3", exact: true })
+      .locator(".status-live"),
+  ).toHaveCount(1);
+  await page.getByLabel("Camera 1 quality", { exact: true }).selectOption("0");
+  await expect(
+    page.getByLabel("Camera 1 quality", { exact: true }),
+  ).toHaveValue("2");
+  await expect(first.locator(".status-live")).toHaveCount(1);
+  await expect(first.locator("select option")).toHaveCount(3);
+  await page.clock.fastForward(1000);
+  await expect(page.getByRole("status")).toHaveText("Saved");
+  const saved = await (await context.request.get("/api/bootstrap")).json();
+  expect(saved.preferences.cameras["cam-3"].quality).toBe("1");
+  expect(saved.preferences.cameras["cam-1"].quality).toBe("2");
   await page.screenshot({ path: testInfo.outputPath("mobile-grid.png") });
   await first
     .getByRole("button", { name: "Stop Camera 1", exact: true })

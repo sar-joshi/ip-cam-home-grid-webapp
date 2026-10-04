@@ -12,6 +12,12 @@ export interface Connection {
   resume: () => void;
   id: string;
 }
+interface PlaybackOptions {
+  audioOnly?: boolean;
+  audioFallback?: string;
+  onAudioLease?: (id?: string) => void;
+  onAudioFallback?: (active: boolean) => void;
+}
 
 export async function connectCamera(
   camera: string,
@@ -20,6 +26,7 @@ export async function connectCamera(
   signal: AbortSignal,
   onStatus: (status: PlaybackStatus) => void,
   onFailure: () => void,
+  options: PlaybackOptions = {},
 ): Promise<Connection> {
   const peer = new RTCPeerConnection({
     iceServers: [],
@@ -36,6 +43,71 @@ export async function connectCamera(
   let candidateTimer: ReturnType<typeof setTimeout> | undefined;
   let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let connectTimer: ReturnType<typeof setTimeout> | undefined;
+  let audioConnection: Connection | undefined;
+  let audioAbort: AbortController | undefined;
+  let audioChecking = false;
+  let audioMissingSince = 0;
+  let nextAudioAttempt = 0;
+  const audioTimer = options.audioFallback
+    ? setInterval(() => void checkAudio(), 2000)
+    : undefined;
+  async function checkAudio() {
+    if (
+      !options.audioFallback ||
+      closing ||
+      !answered ||
+      audioChecking ||
+      audioConnection ||
+      video.muted ||
+      document.hidden ||
+      peer.connectionState !== "connected" ||
+      Date.now() < nextAudioAttempt
+    )
+      return;
+    audioChecking = true;
+    try {
+      const stats = await peer.getStats();
+      if (closing || signal.aborted || video.muted || document.hidden) return;
+      const received = [...stats.values()].some(
+        (report) =>
+          report.type === "inbound-rtp" &&
+          report.kind === "audio" &&
+          report.bytesReceived > 0,
+      );
+      if (received) {
+        audioMissingSince = 0;
+        return;
+      }
+      audioMissingSince ||= Date.now();
+      if (Date.now() - audioMissingSince < 2000) return;
+      audioAbort = new AbortController();
+      const failedAudio = () => {
+        audioConnection = undefined;
+        options.onAudioLease?.();
+        options.onAudioFallback?.(false);
+        nextAudioAttempt = Date.now() + 15000;
+      };
+      const audio = await connectCamera(
+        camera,
+        options.audioFallback,
+        video,
+        AbortSignal.any([signal, audioAbort.signal]),
+        status,
+        failedAudio,
+        { audioOnly: true },
+      );
+      if (closing || signal.aborted) audio.close();
+      else {
+        audioConnection = audio;
+        options.onAudioLease?.(audio.id);
+        options.onAudioFallback?.(true);
+      }
+    } catch {
+      nextAudioAttempt = Date.now() + 15000;
+    } finally {
+      audioChecking = false;
+    }
+  }
   const status = (value: PlaybackStatus) => {
     if (!closing && !signal.aborted && value !== lastStatus) {
       lastStatus = value;
@@ -71,6 +143,11 @@ export async function connectCamera(
   const close = () => {
     if (closing) return;
     closing = true;
+    clearInterval(audioTimer);
+    audioAbort?.abort();
+    audioConnection?.close();
+    options.onAudioLease?.();
+    options.onAudioFallback?.(false);
     clearTimeout(candidateTimer);
     clearTimeout(disconnectTimer);
     clearTimeout(connectTimer);
@@ -84,8 +161,10 @@ export async function connectCamera(
     window.removeEventListener("pagehide", close);
     peer.getReceivers().forEach((receiver) => receiver.track?.stop());
     peer.close();
-    video.pause();
-    video.srcObject = null;
+    if (!options.audioOnly) {
+      video.pause();
+      video.srcObject = null;
+    }
     if (resource)
       void fetch(resource, { method: "DELETE", keepalive: true }).catch(
         () => {},
@@ -160,13 +239,19 @@ export async function connectCamera(
   // Navigation/reload releases its lease; changing tabs only changes visibility.
   window.addEventListener("pagehide", close, { once: true });
   video.defaultMuted = video.muted;
-  peer.addTransceiver("video", { direction: "recvonly" });
+  if (!options.audioOnly)
+    peer.addTransceiver("video", { direction: "recvonly" });
   peer.addTransceiver("audio", { direction: "recvonly" });
   peer.ontrack = (event) => {
     if (closing || signal.aborted) return;
     const stream = video.srcObject as MediaStream | null;
-    if (stream) stream.addTrack(event.track);
-    else video.srcObject = new MediaStream([event.track]);
+    if (stream) {
+      if (options.audioOnly)
+        stream.getAudioTracks().forEach((track) => stream.removeTrack(track));
+      stream.addTrack(event.track);
+      // Refresh the element's selected tracks when an audio-only fallback arrives.
+      video.srcObject = stream;
+    } else video.srcObject = new MediaStream([event.track]);
     play();
   };
   peer.onconnectionstatechange = connectionState;
@@ -211,6 +296,19 @@ export async function connectCamera(
     });
     if (closing || signal.aborted)
       throw new DOMException("Aborted", "AbortError");
+    if (
+      !options.audioOnly &&
+      !peer
+        .getTransceivers()
+        .some(
+          (transceiver) =>
+            transceiver.receiver.track.kind === "video" &&
+            ["recvonly", "sendrecv"].includes(
+              transceiver.currentDirection ?? "",
+            ),
+        )
+    )
+      throw new Error("Video codec unavailable");
     answered = true;
     flushCandidates();
     decoded();
