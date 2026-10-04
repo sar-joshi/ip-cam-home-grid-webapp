@@ -11,6 +11,60 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   const pending = new Set<Request>();
   const cancelledByReload = new Set<Request>();
   const expectedAbortErrors = new Set<string>();
+  const noteAbort = (path: string) => {
+    if (
+      browserName === "webkit" &&
+      /^\/api\/streams\/cam-[1-6]\/[012]$/.test(path)
+    )
+      expectedAbortErrors.add(
+        `/127.0.0.1:3000${path} due to access control checks.`,
+      );
+  };
+  await page.exposeFunction("noteIntentionalStreamAbort", noteAbort);
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = new URL(
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url,
+        window.location.href,
+      );
+      const signal = init?.signal;
+      if (
+        url.origin !== window.location.origin ||
+        !/^\/api\/streams\/cam-[1-6]\/[012]$/.test(url.pathname) ||
+        !signal
+      )
+        return originalFetch(input, init);
+      const note = () => {
+        // The app deliberately aborts on stop/focus/unmount. A timeout or real
+        // CORS failure must still fail the browser-error assertion.
+        if (
+          signal.reason instanceof DOMException &&
+          signal.reason.name === "AbortError"
+        )
+          void (
+            window as typeof window & {
+              noteIntentionalStreamAbort: (path: string) => Promise<void>;
+            }
+          ).noteIntentionalStreamAbort(url.pathname);
+      };
+      signal.addEventListener("abort", note, { once: true });
+      return originalFetch(input, init).then(
+        (response) => {
+          signal.removeEventListener("abort", note);
+          return response;
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", note);
+          throw error;
+        },
+      );
+    };
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
     if (
