@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
+import { defaults } from "@homegrid/shared";
 
 test("password gate, real WebRTC video, controls, persistence, focus and logout", async ({
   page,
@@ -35,6 +36,20 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await expect(
     page.getByRole("heading", { name: "Your cameras" }),
   ).toBeVisible();
+  // The household's preferences persist across browser contexts. Reset only
+  // this synthetic household before exercising persistence inside this test.
+  const fixture = await (await context.request.get("/api/bootstrap")).json();
+  expect(
+    (
+      await context.request.put("/api/preferences", {
+        headers: { Origin: "http://127.0.0.1:3000" },
+        data: defaults(fixture.cameras),
+      })
+    ).status(),
+  ).toBe(200);
+  await page.reload();
+  // Three columns put every video in view on iPhone; offscreen resume is tested
+  // separately because WebKit may defer autoplay outside the viewport.
   await expect(page.locator(".status-live")).toHaveCount(6, { timeout: 45000 });
   await expect
     .poll(async () =>

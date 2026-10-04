@@ -81,6 +81,7 @@ export async function connectCamera(
     video.removeEventListener("loadeddata", decoded);
     video.removeEventListener("timeupdate", decoded);
     document.removeEventListener("visibilitychange", visibility);
+    window.removeEventListener("pagehide", close);
     peer.getReceivers().forEach((receiver) => receiver.track?.stop());
     peer.close();
     video.pause();
@@ -156,6 +157,8 @@ export async function connectCamera(
   video.addEventListener("loadeddata", decoded);
   video.addEventListener("timeupdate", decoded);
   document.addEventListener("visibilitychange", visibility);
+  // Navigation/reload releases its lease; changing tabs only changes visibility.
+  window.addEventListener("pagehide", close, { once: true });
   video.defaultMuted = video.muted;
   peer.addTransceiver("video", { direction: "recvonly" });
   peer.addTransceiver("audio", { direction: "recvonly" });

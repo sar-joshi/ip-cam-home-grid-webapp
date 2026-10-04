@@ -169,10 +169,16 @@ export function Viewer({
     };
     window.addEventListener("keydown", key);
     window.addEventListener("pagehide", pageHide);
+    const pageShow = (event: PageTransitionEvent) => {
+      // Restored page snapshots contain closed peers and possibly expired auth.
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", pageShow);
     return () => {
       alive.current = false;
       window.removeEventListener("keydown", key);
       window.removeEventListener("pagehide", pageHide);
+      window.removeEventListener("pageshow", pageShow);
     };
   }, []);
   useEffect(() => {
