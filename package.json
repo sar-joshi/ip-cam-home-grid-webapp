@@ -20,11 +20,15 @@
     "typecheck": "tsc --noEmit && npm run typecheck -w @homegrid/web",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
-    "verify": "npm run lint && npm run typecheck && npm test && npm run build",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "setup:web": "tsx scripts/setup-web.ts",
     "install:media": "tsx scripts/install-media.ts",
     "vercel:env": "tsx scripts/vercel-env.ts",
-    "password:reset": "tsx scripts/reset-password.ts"
+    "password:reset": "tsx scripts/reset-password.ts",
+    "format": "prettier --write apps packages scripts tests *.json *.mjs *.ts .github",
+    "format:check": "prettier --check apps packages scripts tests *.json *.mjs *.ts .github",
+    "install:mac": "tsx scripts/install-mac.ts",
+    "install:tunnel": "tsx scripts/install-tunnel.ts"
   },
   "dependencies": {
     "tsx": "4.23.15"
@@ -38,6 +42,7 @@
     "agent-browser": "^0.38.2",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.9",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.71.0"
   }
