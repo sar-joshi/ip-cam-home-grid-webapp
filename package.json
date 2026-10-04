@@ -1,0 +1,44 @@
+{
+  "name": "homegrid-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @homegrid/web",
+    "gateway": "tsx apps/gateway/src/main.ts",
+    "setup": "tsx scripts/setup.ts",
+    "build": "npm run build -w @homegrid/web",
+    "start": "npm run start -w @homegrid/web",
+    "lint": "eslint apps/web packages/shared apps/gateway scripts tests",
+    "typecheck": "tsc --noEmit && npm run typecheck -w @homegrid/web",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build",
+    "setup:web": "tsx scripts/setup-web.ts",
+    "install:media": "tsx scripts/install-media.ts",
+    "vercel:env": "tsx scripts/vercel-env.ts",
+    "password:reset": "tsx scripts/reset-password.ts"
+  },
+  "dependencies": {
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "24.10.1",
+    "agent-browser": "^0.38.2",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "name": "@homegrid/gateway", "version": "0.1.0", "private": true, "type": "module",
+  "dependencies": {"@homegrid/shared": "*", "better-auth": "1.7.7", "better-sqlite3": "13.0.3", "fastify": "5.12.5", "yaml": "2.9.1"}
+}

@@ -8,3 +8,13 @@ out/
 settings.json
 *.log
 *.mp4
+state/
+.tools/
+test-results/
+playwright-report/
+*.sqlite*
+*.tsbuildinfo
+*.pem
+*.crt
+*.key
+gateway.env
