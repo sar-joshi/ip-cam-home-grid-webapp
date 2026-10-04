@@ -78,6 +78,23 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
     // Reproduce an autoplay refusal without breaking the underlying WebRTC peer.
     let allowPlayback = false;
     const originalPlay = HTMLMediaElement.prototype.play;
+    const originalPaused = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "paused",
+    )!.get!;
+    Object.defineProperty(HTMLMediaElement.prototype, "paused", {
+      configurable: true,
+      get() {
+        // Keep the simulated policy deterministic even if Linux WebKit briefly
+        // schedules native autoplay before the overridden play method runs.
+        if (
+          this.getAttribute("aria-label") === "Camera 1 live video" &&
+          !allowPlayback
+        )
+          return true;
+        return originalPaused.call(this);
+      },
+    });
     HTMLMediaElement.prototype.play = function () {
       if (
         this.getAttribute("aria-label") === "Camera 1 live video" &&
