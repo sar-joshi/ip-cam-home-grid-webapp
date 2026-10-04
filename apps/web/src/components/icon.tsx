@@ -11,8 +11,17 @@ export type IconName =
   | "camera"
   | "close"
   | "check"
-  | "retry";
+  | "retry"
+  | "snapshot"
+  | "record";
 const paths: Record<IconName, React.ReactNode> = {
+  snapshot: (
+    <>
+      <path d="M8 5 9 3h6l1 2h4v15H4V5Z" />
+      <circle cx="12" cy="12" r="4" />
+    </>
+  ),
+  record: <circle cx="12" cy="12" r="7" />,
   grid: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />

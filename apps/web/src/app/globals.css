@@ -441,12 +441,65 @@ video {
   border-radius: 5px;
 }
 .tile-controls {
-  height: 45px;
+  min-height: 45px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 3px;
   padding: 0 8px;
   border-top: 1px solid #283943;
+}
+.recording-button {
+  color: #ff8787;
+}
+.capture-message {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: #a7bdc7;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+.capture-tray {
+  border: 1px solid #283943;
+  border-radius: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  background: #14212a;
+  font-size: 12px;
+}
+.capture-tray-heading,
+.capture-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.capture-tray-heading {
+  margin-bottom: 10px;
+}
+.capture-tray-heading > span {
+  color: #a7bdc7;
+  font-size: 11px;
+}
+.capture-item {
+  padding: 6px 0;
+}
+.capture-description {
+  flex: 1;
+  min-width: 140px;
+}
+.capture-description strong,
+.capture-description > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.capture-description > span {
+  color: #a7bdc7;
+  margin-top: 3px;
+}
+.capture-tray .text-button {
+  text-decoration: none;
 }
 .tile-controls select {
   font-size: 11px;

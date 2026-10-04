@@ -11,6 +11,7 @@ A private Next.js camera grid for six Dahua NVR channels. Vercel hosts the inter
 - When unmuted Sub 2 on channels 1–2 delivers no audio packets, receive audio from Sub 1 through an additional audio-only connection. A tile note identifies the audio source. Video remains on Sub 2; no video is transcoded.
 - Double-click a camera or press its focus button to enlarge it; Escape restores the grid. Hidden tiles release their streams and explicitly stopped cameras stay stopped.
 - Save camera selection, ordering, quality, mute, and stop choices in local SQLite.
+- Save a PNG snapshot or a short video clip from each tile to the viewing device. Clips include camera audio only when unmuted, with no cloud upload.
 - Use one household password with an eight-hour maximum session. Lock closes the current session's media streams and returns to the password screen.
 - Keep healthy video connections when switching tabs or desktops. Resume browser-paused video on return or scroll, with a Play video button if autoplay needs a tap. Reconnect with capped backoff when an active stream stalls or its connection drops.
 
@@ -24,7 +25,15 @@ Browser ── HTTPS ── Vercel / Next.js ── authenticated HTTPS ── C
 Dahua NVR ── RTSP/TCP ── MediaMTX on the Mac ── encrypted WebRTC ─┘ Browser on LAN
 ```
 
-Vercel handles the interface, authentication requests and WebRTC signaling. The gateway owns password hashes, sessions, rate limits, preferences and media leases. Video bypasses Vercel and Cloudflare: it stays on the LAN. The Mac must be awake whenever you view cameras. Eero only routes the traffic; it cannot run this application's gateway. There is no external database, storage, analytics, recording or camera upload.
+Vercel handles the interface, authentication requests and WebRTC signaling. The gateway owns password hashes, sessions, rate limits, preferences and media leases. Video bypasses Vercel and Cloudflare: it stays on the LAN. The Mac must be awake whenever you view cameras. Eero only routes the traffic; it cannot run this application's gateway. There is no external database, storage, analytics or camera upload. Snapshots and clips are generated in the viewing browser and saved locally; the gateway does not record them.
+
+## Snapshots and clips
+
+Use the snapshot button to download a PNG at the selected stream's resolution. Use Record, then Stop recording, to save a clip. Compatible browsers use WebM with VP8/Opus; MP4 is used when WebM is unavailable. The actual recorder output controls the file extension. The Save and Share controls under Recent captures let you download again or use your device's share sheet, including Files on iPhone.
+
+Unmute before starting to include available camera audio. A muted camera records video only. Quality and mute changes are disabled during recording to keep the clip's tracks stable. Stopping or hiding a camera ends its clip; Lock finalizes active clips before closing connections. Capture stops cloned tracks, leaving live playback intact.
+
+Clips automatically end after five minutes or roughly 32 MB, including the final encoding chunk. The viewer retains only six recent download links. Save or share before closing/reloading the page; these links are temporary, and downloads may require a browser confirmation. Keep HomeGrid open while recording: phones can suspend media when backgrounded. Captures never go to Vercel, Cloudflare, GitHub or the gateway database. No device camera/microphone permission is requested.
 
 SQLite requires persistent disk and is therefore kept at home. Vercel functions do not provide shared permanent filesystem storage; see [Vercel's SQLite guidance](https://vercel.com/kb/guide/is-sqlite-supported-in-vercel).
 
