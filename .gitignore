@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+.next/
+out/
+.vercel/
+.env*
+!.env.example
+settings.json
+*.log
+*.mp4
