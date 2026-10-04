@@ -201,7 +201,10 @@ export const CameraTile = memo(function CameraTile(props: Props) {
             {status === "Tap to play" ? (
               <button
                 className="text-button"
-                onClick={() => connection.current?.resume()}
+                onClick={() => {
+                  if (connection.current) connection.current.resume();
+                  else void video.current?.play().catch(() => {});
+                }}
               >
                 Play video
               </button>

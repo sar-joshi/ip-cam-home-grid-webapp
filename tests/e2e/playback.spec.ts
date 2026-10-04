@@ -55,12 +55,27 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
         !allowPlayback
       ) {
         this.autoplay = false;
+        this.pause();
         return Promise.reject(
           new DOMException("User gesture required", "NotAllowedError"),
         );
       }
       return originalPlay.call(this);
     };
+    // Some engines schedule native autoplay before the overridden play method.
+    // Enforce the simulated policy before the player's readiness listener runs.
+    document.addEventListener(
+      "playing",
+      (event) => {
+        const video = event.target as HTMLMediaElement;
+        if (
+          video.getAttribute("aria-label") === "Camera 1 live video" &&
+          !allowPlayback
+        )
+          video.pause();
+      },
+      true,
+    );
     document.addEventListener(
       "click",
       (event) => {
@@ -84,46 +99,18 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
     RTCPeerConnection.prototype.setRemoteDescription = async function (
       description,
     ) {
-      const qaWindow = window as typeof window & {
-        qaPeers: RTCPeerConnection[];
-      };
-      (qaWindow.qaPeers ??= []).push(this);
       await originalRemote.call(this, description);
       // Video may start before this promise resolves (the original readiness race).
       await new Promise((resolve) => setTimeout(resolve, 600));
     };
   });
+  await page.clock.install();
   await page.goto("/");
   const first = page.getByRole("article", { name: "Camera 1", exact: true });
   await expect(first.getByRole("button", { name: "Play video" })).toBeVisible({
     timeout: 7000,
   });
-  try {
-    await expect(page.locator(".status-live")).toHaveCount(5, {
-      timeout: 7000,
-    });
-  } catch (error) {
-    console.log(
-      await page.evaluate(() => ({
-        hidden: document.hidden,
-        peers: (
-          window as typeof window & { qaPeers: RTCPeerConnection[] }
-        ).qaPeers.map((peer) => ({
-          state: peer.connectionState,
-          ice: peer.iceConnectionState,
-        })),
-        videos: [...document.querySelectorAll("video")].map((video) => ({
-          width: video.videoWidth,
-          ready: video.readyState,
-          time: video.currentTime,
-          paused: video.paused,
-          muted: video.muted,
-          top: video.getBoundingClientRect().top,
-        })),
-      })),
-    );
-    throw error;
-  }
+  await expect(page.locator(".status-live")).toHaveCount(5, { timeout: 7000 });
   await first.getByRole("button", { name: "Play video" }).click();
   await expect(page.locator(".status-live")).toHaveCount(6, { timeout: 7000 });
   await expect
@@ -140,7 +127,7 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
     )
     .toBe(true);
   expect(creates).toBe(6);
-  expect(patches).toBeGreaterThan(0);
+  await expect.poll(() => patches).toBeGreaterThan(0);
   const streamIds = await page
     .locator("video")
     .evaluateAll((videos) =>
@@ -148,7 +135,7 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
         (video) => ((video as HTMLVideoElement).srcObject as MediaStream).id,
       ),
     );
-  await page.clock.install();
+  const beforeHide = heartbeats;
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,
@@ -157,9 +144,11 @@ test("fast Sub 2 startup, autoplay recovery, background continuity and mobile co
     document.dispatchEvent(new Event("visibilitychange"));
     document.querySelectorAll("video").forEach((video) => video.pause());
   });
+  await expect.poll(() => heartbeats).toBeGreaterThan(beforeHide);
+  const atHide = heartbeats;
   // Simulate the minute timer throttling used by background desktop tabs.
   await page.clock.fastForward(65000);
-  await expect.poll(() => heartbeats).toBeGreaterThan(0);
+  await expect.poll(() => heartbeats).toBeGreaterThan(atHide);
   expect(creates).toBe(6);
   expect(deletes).toBe(0);
   await page.evaluate(() => {
