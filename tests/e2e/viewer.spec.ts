@@ -1,4 +1,4 @@
-import { test, expect, type Request } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 import { defaults } from "@homegrid/shared";
 
@@ -8,33 +8,31 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   browserName,
 }) => {
   const errors: string[] = [];
-  const pending = new Set<Request>();
-  const cancelledByReload = new Set<Request>();
-  const expectedAbortErrors = new Set<string>();
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("request", (request) => {
-    if (
-      request.method() === "POST" &&
-      /\/api\/streams\/cam-/.test(request.url())
-    )
-      pending.add(request);
-  });
-  page.on("requestfinished", (request) => pending.delete(request));
-  page.on("requestfailed", (request) => {
-    pending.delete(request);
-    // Linux WebKit reports some reload-cancelled fetches as access-control page
-    // errors. Discount only requests this test cancelled that actually failed.
-    if (browserName === "webkit" && cancelledByReload.has(request)) {
-      const url = new URL(request.url());
-      expectedAbortErrors.add(
-        `/${url.host}${url.pathname} due to access control checks.`,
-      );
+  // Reset this synthetic household before the successful login response reaches
+  // the UI, so fixture setup never opens streams just to discard them on reload.
+  await page.route("**/api/auth/login", async (route) => {
+    const response = await route.fetch();
+    if (response.status() === 200) {
+      const cookie = response
+        .headersArray()
+        .filter((header) => header.name.toLowerCase() === "set-cookie")
+        .map((header) => header.value.split(";")[0])
+        .join("; ");
+      const fixture = await (
+        await context.request.get("/api/bootstrap", { headers: { cookie } })
+      ).json();
+      expect(
+        (
+          await context.request.put("/api/preferences", {
+            headers: { Origin: "http://127.0.0.1:3000", cookie },
+            data: defaults(fixture.cameras),
+          })
+        ).status(),
+      ).toBe(200);
     }
+    await route.fulfill({ response });
   });
-  const reload = async () => {
-    pending.forEach((request) => cancelledByReload.add(request));
-    await page.reload();
-  };
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
@@ -62,20 +60,6 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await expect(
     page.getByRole("heading", { name: "Your cameras" }),
   ).toBeVisible();
-  // The household's preferences persist across browser contexts. Reset only
-  // this synthetic household before exercising persistence inside this test.
-  const fixture = await (await context.request.get("/api/bootstrap")).json();
-  expect(
-    (
-      await context.request.put("/api/preferences", {
-        headers: { Origin: "http://127.0.0.1:3000" },
-        data: defaults(fixture.cameras),
-      })
-    ).status(),
-  ).toBe(200);
-  await reload();
-  // Three columns put every video in view on iPhone; offscreen resume is tested
-  // separately because WebKit may defer autoplay outside the viewport.
   await expect(page.locator(".status-live")).toHaveCount(6, { timeout: 45000 });
   await expect
     .poll(async () =>
@@ -133,7 +117,8 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     page.getByRole("button", { name: "Mute Camera 2", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Saved");
-  await reload();
+  await expect(page.locator(".status-live")).toHaveCount(5, { timeout: 45000 });
+  await page.reload();
   await expect(page.getByRole("article").first()).toHaveAccessibleName(
     "Camera 2",
   );
@@ -145,6 +130,16 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
       .getByRole("article", { name: "Camera 1", exact: true })
       .getByText("Stream stopped"),
   ).toBeVisible();
+  const second = page.getByRole("article", { name: "Camera 2", exact: true });
+  await expect
+    .poll(
+      async () =>
+        (await second.locator(".status-live, .status-tap-to-play").count()) > 0,
+    )
+    .toBe(true);
+  const play = second.getByRole("button", { name: "Play video" });
+  if (await play.isVisible()) await play.click();
+  await expect(page.locator(".status-live")).toHaveCount(5, { timeout: 45000 });
   await page.getByRole("button", { name: "Cameras 6", exact: true }).click();
   await page.getByRole("checkbox", { name: /Camera 6/ }).uncheck();
   await expect(page.getByRole("article")).toHaveCount(5);
@@ -159,7 +154,5 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await page.getByRole("button", { name: "Lock", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   expect((await context.request.get("/api/bootstrap")).status()).toBe(401);
-  expect(errors.filter((message) => !expectedAbortErrors.has(message))).toEqual(
-    [],
-  );
+  expect(errors).toEqual([]);
 });
