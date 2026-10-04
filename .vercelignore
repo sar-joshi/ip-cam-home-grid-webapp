@@ -1,7 +1,6 @@
 gateway.env
 state
 .tools
-apps/gateway
 scripts
 tests
 test-results

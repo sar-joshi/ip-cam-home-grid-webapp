@@ -18,3 +18,4 @@ playwright-report/
 *.crt
 *.key
 gateway.env
+.vercel

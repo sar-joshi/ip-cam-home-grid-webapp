@@ -22,6 +22,14 @@ export interface Config {
   icePort: number;
 }
 const secret = z.string().min(43).max(256);
+function credential(env: NodeJS.ProcessEnv, name: string) {
+  const encoded = env[`${name}_BASE64`];
+  if (encoded === undefined) return z.string().min(1).max(256).parse(env[name]);
+  const decoded = Buffer.from(encoded, "base64");
+  if (decoded.toString("base64") !== encoded)
+    throw new Error("Invalid encoded credential");
+  return z.string().min(1).max(256).parse(decoded.toString("utf8"));
+}
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const app = new URL(z.string().url().parse(env.HOMEGRID_APP_ORIGIN));
   if (
@@ -67,8 +75,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .min(1)
       .max(65535)
       .parse(env.NVR_PORT ?? "554"),
-    nvrUser: z.string().min(1).max(256).parse(env.NVR_USERNAME),
-    nvrPassword: z.string().min(1).max(256).parse(env.NVR_PASSWORD),
+    nvrUser: credential(env, "NVR_USERNAME"),
+    nvrPassword: credential(env, "NVR_PASSWORD"),
     mediaBinary: resolve(env.MEDIAMTX_BINARY ?? ".tools/mediamtx"),
     mediaPort: z.coerce
       .number()

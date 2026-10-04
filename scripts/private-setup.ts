@@ -47,8 +47,10 @@ export async function privateSetup(input: unknown) {
     MEDIAMTX_SECRET: random(),
     GATEWAY_LAN_IP: values.lanIp,
     NVR_HOST: values.nvrHost,
-    NVR_USERNAME: values.nvrUser,
-    NVR_PASSWORD: values.nvrPassword,
+    // Base64 is an encoding, not encryption. It preserves quotes, backslashes
+    // and Unicode without relying on dotenv's unsupported JSON escaping.
+    NVR_USERNAME_BASE64: Buffer.from(values.nvrUser).toString("base64"),
+    NVR_PASSWORD_BASE64: Buffer.from(values.nvrPassword).toString("base64"),
     MEDIAMTX_BINARY: ".tools/mediamtx",
   };
   const config = readConfig(env);

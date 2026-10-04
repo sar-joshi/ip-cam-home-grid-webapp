@@ -38,7 +38,9 @@ npm run setup:web
 
 Open the one-time loopback URL printed by setup. Enter the NVR IP and a read-only streaming account, its password, and a separate household password of 12–128 characters. These entries stay on the Mac. The terminal alternative is `npm run setup` with hidden password entry.
 
-Setup writes ignored `gateway.env`, `apps/web/.env.local`, and `state/homegrid.sqlite`. Configuration/database files have owner-only permissions. Never commit, publish or share these files. NVR credentials are plaintext in private gateway environment/configuration because the gateway must authenticate to the NVR; enable FileVault and restrict access to the gateway account. Household passwords use Better Auth's salted scrypt hash.
+Setup writes ignored `gateway.env`, `apps/web/.env.local`, and `state/homegrid.sqlite`. Configuration/database files have owner-only permissions. Never commit, publish or share these files. NVR credentials are unencrypted in private gateway environment/configuration because the gateway must authenticate to the NVR; setup uses base64 encoding to preserve special characters, which is not encryption. Enable FileVault and restrict access to the gateway account. Household passwords use Better Auth's salted scrypt hash.
+
+If you mistype the NVR username, use `npm run nvr:correct`. Its one-time local form changes only the username and preserves passwords, service tokens and SQLite. Restart an already-running gateway after saving it.
 
 Default camera IDs `cam-1` through `cam-6` map to NVR channels 1–6. Set private `CAMERAS_JSON` in `gateway.env` to change names/channels; `.env.example` shows the format. Use an eero DHCP reservation for the Mac/Pi and set `GATEWAY_LAN_IP` to that address.
 
@@ -71,6 +73,8 @@ Use separate subdomains, such as `homegrid.example.com` (Vercel) and `homegrid-g
 5. Add the viewer domain in Vercel and create its recommended DNS record in Cloudflare with proxy disabled. Redeploy production after setting variables. Preview deployments receive no production gateway credentials and fail closed.
 
 With the chosen domains connected, visit the viewer on your home network and enter your household password. Approve the browser's local-network permission if requested. The interface can load while away, but LAN-only media needs a VPN or a separately designed remote-media path; this version does not expose video ports or add third-party STUN/TURN servers.
+
+On macOS, `npm run install:tunnel` installs the verified official connector. After private setup and `state/cloudflare/config.yml` are complete, `npm run install:mac` installs and starts user LaunchAgents for the gateway and tunnel. These services run while you are signed in and the Mac is awake; private logs stay in `state/`. Stop them with `launchctl bootout gui/$(id -u)/org.homegrid.gateway` and `launchctl bootout gui/$(id -u)/org.homegrid.tunnel`. Run `install:mac` again to restart after configuration changes. Do not move the checkout without reinstalling those services.
 
 ## Security and operations
 

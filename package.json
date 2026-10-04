@@ -28,7 +28,8 @@
     "format": "prettier --write apps packages scripts tests *.json *.mjs *.ts .github",
     "format:check": "prettier --check apps packages scripts tests *.json *.mjs *.ts .github",
     "install:mac": "tsx scripts/install-mac.ts",
-    "install:tunnel": "tsx scripts/install-tunnel.ts"
+    "install:tunnel": "tsx scripts/install-tunnel.ts",
+    "nvr:correct": "tsx scripts/correct-nvr.ts"
   },
   "dependencies": {
     "tsx": "4.23.15"
