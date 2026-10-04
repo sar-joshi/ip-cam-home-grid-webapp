@@ -26,7 +26,7 @@ export function makeServer(
   });
   const auth = makeAuth(config, db);
   server.addContentTypeParser(
-    "application/sdp",
+    ["application/sdp", "application/trickle-ice-sdpfrag"],
     { parseAs: "string" },
     (_req, body, done) => done(null, body),
   );
@@ -186,6 +186,33 @@ export function makeServer(
       return reply.code(503).send({
         error: "Camera unavailable. Check the stream codec and connection.",
       });
+    }
+  });
+  server.patch("/internal/streams/sessions/:id", async (request, reply) => {
+    const current = await session(request.headers.cookie);
+    if (!current) return reply.code(401).send({ error: "Unauthorized" });
+    const id = uuid.safeParse((request.params as { id: string }).id);
+    if (
+      !id.success ||
+      request.headers["content-type"] !== "application/trickle-ice-sdpfrag" ||
+      typeof request.body !== "string" ||
+      !request.body.startsWith("a=ice-ufrag:") ||
+      !request.body.includes("\r\na=ice-pwd:")
+    )
+      return reply.code(400).send({ error: "Invalid ICE update" });
+    if (!consumeLimit(db, `ice-${current.session.id}`, 120, 60000))
+      return reply.code(429).send({ error: "Connection update limit reached" });
+    try {
+      const updated = await media.patch(
+        current.session.id,
+        id.data,
+        request.body,
+      );
+      return updated
+        ? reply.code(204).send()
+        : reply.code(404).send({ error: "Video session not found" });
+    } catch {
+      return reply.code(503).send({ error: "Connection update unavailable" });
     }
   });
   server.delete("/internal/streams/sessions/:id", async (request, reply) => {

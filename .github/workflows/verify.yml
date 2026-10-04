@@ -26,5 +26,5 @@ jobs:
       - run: npm run verify
       - run: npm run install:media
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e

@@ -56,7 +56,10 @@ async function handle(
   let target = routes[`${method} ${name}`];
   if (method === "POST" && /^streams\/cam-[1-6]\/[012]$/.test(name))
     target = `/internal/${name}`;
-  if (method === "DELETE" && /^streams\/sessions\/[0-9a-f-]{36}$/.test(name))
+  if (
+    ["DELETE", "PATCH"].includes(method) &&
+    /^streams\/sessions\/[0-9a-f-]{36}$/.test(name)
+  )
     target = `/internal/${name}`;
   if (!target)
     return Response.json(
@@ -104,3 +107,4 @@ export const GET = handle;
 export const POST = handle;
 export const PUT = handle;
 export const DELETE = handle;
+export const PATCH = handle;
