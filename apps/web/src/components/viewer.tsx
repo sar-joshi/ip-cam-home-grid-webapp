@@ -9,6 +9,11 @@ import {
 import { CameraTile } from "./camera-tile";
 import { Brand, Icon } from "./icon";
 import type { PlaybackStatus } from "@/lib/playback";
+import { downloadCapture, type CaptureFile } from "@/lib/capture";
+
+interface SavedCapture extends CaptureFile {
+  url: string;
+}
 
 export function Viewer({
   cameras,
@@ -29,6 +34,48 @@ export function Viewer({
   const alive = useRef(true);
   const saveQueue = useRef(Promise.resolve());
   const pendingWrites = useRef(0);
+  const recordingStops = useRef(new Map<string, () => Promise<void>>());
+  const captured = useRef<SavedCapture[]>([]);
+  const [captures, setCaptures] = useState<SavedCapture[]>([]);
+  const [captureError, setCaptureError] = useState("");
+  const onRecorder = useCallback(
+    (camera: string, stop?: () => Promise<void>) => {
+      if (stop) recordingStops.current.set(camera, stop);
+      else recordingStops.current.delete(camera);
+    },
+    [],
+  );
+  const onCapture = useCallback((file: CaptureFile) => {
+    if (!alive.current) return;
+    const saved = { ...file, url: URL.createObjectURL(file.blob) };
+    const next = [saved, ...captured.current];
+    // Retain just the six latest download links, with bounded clip sizes.
+    next.splice(6).forEach((old) => URL.revokeObjectURL(old.url));
+    captured.current = next;
+    setCaptures(next);
+    downloadCapture(saved.url, saved.filename);
+  }, []);
+  const discard = (url: string) => {
+    URL.revokeObjectURL(url);
+    captured.current = captured.current.filter((file) => file.url !== url);
+    setCaptures(captured.current);
+  };
+  const share = async (file: SavedCapture) => {
+    const local = new File([file.blob], file.filename, {
+      type: file.blob.type,
+    });
+    if (!navigator.canShare?.({ files: [local] })) {
+      setCaptureError("Use Save to download this file on your device.");
+      return;
+    }
+    try {
+      await navigator.share({ files: [local] });
+      setCaptureError("");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        setCaptureError("Sharing failed. Use Save instead.");
+    }
+  };
   const onLease = useCallback((camera: string, id?: string) => {
     if (id) leases.current.set(camera, id);
     else leases.current.delete(camera);
@@ -186,6 +233,7 @@ export function Viewer({
       window.removeEventListener("keydown", key);
       window.removeEventListener("pagehide", pageHide);
       window.removeEventListener("pageshow", pageShow);
+      captured.current.forEach((file) => URL.revokeObjectURL(file.url));
     };
   }, []);
   useEffect(() => {
@@ -219,6 +267,10 @@ export function Viewer({
     };
   }, [locked]);
   async function lock() {
+    // Finalize and download active clips before locking unmounts the viewer.
+    await Promise.all(
+      [...recordingStops.current.values()].map((stop) => stop()),
+    );
     setLocked(true);
     await saveQueue.current.catch(() => {});
     try {
@@ -388,6 +440,8 @@ export function Viewer({
                   onMove={move}
                   onLease={onLease}
                   onStatus={onStatus}
+                  onCapture={onCapture}
+                  onRecorder={onRecorder}
                 />
               );
             })}
@@ -408,6 +462,53 @@ export function Viewer({
             ) : null}
           </section>
         )}
+        {captures.length ? (
+          <section className="capture-tray" aria-label="Latest captures">
+            <div className="capture-tray-heading">
+              <strong>Recent captures</strong>
+              <span>Save or share before closing this page · Latest 6</span>
+            </div>
+            {captures.map((file) => (
+              <div className="capture-item" key={file.url}>
+                <Icon name={file.kind === "snapshot" ? "snapshot" : "record"} />
+                <span className="capture-description">
+                  <strong>{file.filename}</strong>
+                  <span>
+                    {file.detail} · {(file.blob.size / 1048576).toFixed(1)} MB
+                  </span>
+                </span>
+                <a
+                  className="text-button"
+                  href={file.url}
+                  download={file.filename}
+                  aria-label={`Save ${file.filename}`}
+                >
+                  Save
+                </a>
+                <button
+                  className="text-button"
+                  onClick={() => void share(file)}
+                  aria-label={`Share ${file.filename}`}
+                >
+                  Share
+                </button>
+                <button
+                  className="icon-button"
+                  onClick={() => discard(file.url)}
+                  aria-label={`Dismiss ${file.filename}`}
+                  title="Remove download link"
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+            ))}
+            {captureError ? (
+              <p className="error-text" aria-live="polite">
+                {captureError}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
         <footer className="workspace-footer">
           <span>
             Double-click to focus<span className="footer-separator">·</span>Esc

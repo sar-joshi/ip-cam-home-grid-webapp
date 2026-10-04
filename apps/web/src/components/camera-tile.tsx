@@ -13,6 +13,8 @@ import {
   type PlaybackStatus,
 } from "@/lib/playback";
 import { Icon } from "./icon";
+import { CaptureControls } from "./capture-controls";
+import type { CaptureFile } from "@/lib/capture";
 
 interface Props {
   camera: Camera;
@@ -28,6 +30,8 @@ interface Props {
   onMove: (id: string, direction: number) => void;
   onLease: (camera: string, id?: string) => void;
   onStatus: (camera: string, status: PlaybackStatus) => void;
+  onCapture: (file: CaptureFile) => void;
+  onRecorder: (camera: string, stop?: () => Promise<void>) => void;
 }
 export const CameraTile = memo(function CameraTile(props: Props) {
   const { camera, quality, muted, stopped, onLease, onStatus, onQuality } =
@@ -40,6 +44,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
   const [dropTarget, setDropTarget] = useState(false);
   const [notice, setNotice] = useState("");
   const [audioFallback, setAudioFallback] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const status: PlaybackStatus = stopped ? "Stopped" : connectionStatus;
   useEffect(() => {
     onStatus(camera.id, status);
@@ -246,6 +251,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
         <select
           aria-label={`${camera.name} quality`}
           value={quality}
+          disabled={capturing}
           onChange={(event) => {
             setNotice("");
             props.onQuality(camera.id, event.target.value as Quality);
@@ -271,6 +277,7 @@ export const CameraTile = memo(function CameraTile(props: Props) {
           aria-label={`${muted ? "Unmute" : "Mute"} ${camera.name}`}
           title={`${muted ? "Unmute" : "Mute"}${audioFallback ? " (audio from Sub 1)" : ""}`}
           aria-pressed={!muted}
+          disabled={capturing}
         >
           <Icon name={muted ? "mute" : "sound"} />
         </button>
@@ -303,6 +310,14 @@ export const CameraTile = memo(function CameraTile(props: Props) {
         >
           <Icon name={props.focused ? "collapse" : "expand"} />
         </button>
+        <CaptureControls
+          camera={camera}
+          video={video}
+          ready={status === "Live"}
+          onCapture={props.onCapture}
+          onRecorder={props.onRecorder}
+          onBusy={setCapturing}
+        />
       </footer>
       {notice || audioFallback ? (
         <p className="tile-notice" aria-live="polite">
