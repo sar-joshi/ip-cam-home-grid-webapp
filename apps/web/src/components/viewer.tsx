@@ -10,6 +10,7 @@ import { CameraTile } from "./camera-tile";
 import { Brand, Icon } from "./icon";
 import type { PlaybackStatus } from "@/lib/playback";
 import { downloadCapture, type CaptureFile } from "@/lib/capture";
+import Image from "next/image";
 
 interface SavedCapture extends CaptureFile {
   url: string;
@@ -36,6 +37,9 @@ export function Viewer({
   const pendingWrites = useRef(0);
   const recordingStops = useRef(new Map<string, () => Promise<void>>());
   const captured = useRef<SavedCapture[]>([]);
+  const captureDialog = useRef<HTMLDialogElement>(null);
+  const locking = useRef(false);
+  const [preview, setPreview] = useState<SavedCapture | null>(null);
   const [captures, setCaptures] = useState<SavedCapture[]>([]);
   const [captureError, setCaptureError] = useState("");
   const onRecorder = useCallback(
@@ -53,8 +57,13 @@ export function Viewer({
     next.splice(6).forEach((old) => URL.revokeObjectURL(old.url));
     captured.current = next;
     setCaptures(next);
-    downloadCapture(saved.url, saved.filename);
+    setCaptureError("");
+    if (locking.current) downloadCapture(saved.url, saved.filename);
+    else setPreview(saved);
   }, []);
+  useEffect(() => {
+    if (preview) captureDialog.current?.showModal();
+  }, [preview]);
   const discard = (url: string) => {
     URL.revokeObjectURL(url);
     captured.current = captured.current.filter((file) => file.url !== url);
@@ -198,7 +207,7 @@ export function Viewer({
   useEffect(() => {
     alive.current = true;
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !captureDialog.current?.open) {
         setFocused(null);
         setChooser(false);
       }
@@ -268,6 +277,7 @@ export function Viewer({
   }, [locked]);
   async function lock() {
     // Finalize and download active clips before locking unmounts the viewer.
+    locking.current = true;
     await Promise.all(
       [...recordingStops.current.values()].map((stop) => stop()),
     );
@@ -483,14 +493,21 @@ export function Viewer({
                   download={file.filename}
                   aria-label={`Save ${file.filename}`}
                 >
-                  Save
+                  Save to Files
                 </a>
+                <button
+                  className="text-button"
+                  onClick={() => setPreview(file)}
+                  aria-label={`Preview ${file.filename}`}
+                >
+                  Preview
+                </button>
                 <button
                   className="text-button"
                   onClick={() => void share(file)}
                   aria-label={`Share ${file.filename}`}
                 >
-                  Share
+                  Photos / Share
                 </button>
                 <button
                   className="icon-button"
@@ -508,6 +525,66 @@ export function Viewer({
               </p>
             ) : null}
           </section>
+        ) : null}
+        {preview ? (
+          <dialog
+            ref={captureDialog}
+            className="capture-dialog"
+            aria-labelledby="capture-preview-title"
+            onCancel={() => setPreview(null)}
+            onClose={() => setPreview(null)}
+          >
+            <div className="capture-dialog-heading">
+              <h2 id="capture-preview-title">Capture preview</h2>
+              <button
+                className="icon-button"
+                aria-label="Close capture preview"
+                onClick={() => setPreview(null)}
+                autoFocus
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            {preview.kind === "recording" ? (
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                src={preview.url}
+                aria-label="Recorded clip preview"
+              />
+            ) : (
+              <Image
+                unoptimized
+                src={preview.url}
+                width={640}
+                height={360}
+                alt="Captured camera snapshot"
+              />
+            )}
+            <p>
+              On iPhone, choose <strong>Save Image</strong> or{" "}
+              <strong>Save Video</strong> from Photos / Share. Save to Files
+              keeps a downloaded copy.
+            </p>
+            <div className="capture-dialog-actions">
+              <button className="primary" onClick={() => void share(preview)}>
+                Photos / Share
+              </button>
+              <a
+                className="secondary"
+                href={preview.url}
+                download={preview.filename}
+              >
+                Save to Files
+              </a>
+            </div>
+            {captureError ? (
+              <p className="error-text" role="status">
+                {captureError}
+              </p>
+            ) : null}
+          </dialog>
         ) : null}
         <footer className="workspace-footer">
           <span>

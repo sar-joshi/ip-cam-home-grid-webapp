@@ -27,4 +27,8 @@ test("recording chooses a supported browser format and handles unavailable encod
     recordingMimeType(() => false),
     undefined,
   );
+  assert.equal(
+    recordingMimeType(() => true),
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  );
 });

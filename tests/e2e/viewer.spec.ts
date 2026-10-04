@@ -27,9 +27,15 @@ async function verifyClip(download: Download, hasAudio = true) {
   expect(video.width).toBe(640);
   expect(video.height).toBe(360);
   expect(Number(video.nb_read_frames)).toBeGreaterThan(10);
+  if (download.suggestedFilename().endsWith(".mp4"))
+    expect(video.codec_name).toBe("h264");
   if (hasAudio) {
     expect(audio).toBeTruthy();
     expect(Number(audio.nb_read_frames)).toBeGreaterThan(1);
+    if (download.suggestedFilename().endsWith(".mp4")) {
+      expect(audio.codec_name).toBe("aac");
+      expect(audio.sample_rate).toBe("48000");
+    }
   } else expect(audio).toBeUndefined();
 }
 
@@ -180,12 +186,41 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await second
     .getByRole("button", { name: "Snapshot Camera 2", exact: true })
     .click();
+  const preview = page.getByRole("dialog", { name: "Capture preview" });
+  await expect(preview.getByAltText("Captured camera snapshot")).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: (data: ShareData) => data.files?.length === 1,
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        Reflect.set(
+          window,
+          "qaShared",
+          data.files?.map((file) => ({ name: file.name, type: file.type })),
+        );
+      },
+    });
+  });
+  await preview
+    .getByRole("button", { name: "Photos / Share", exact: true })
+    .click();
+  expect(await page.evaluate(() => Reflect.get(window, "qaShared"))).toEqual([
+    { name: expect.stringMatching(/\.png$/), type: "image/png" },
+  ]);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await preview
+    .getByRole("link", { name: "Save to Files", exact: true })
+    .click();
   const still = await stillDownload;
   expect(still.suggestedFilename()).toMatch(/\.png$/);
   const png = await readFile((await still.path())!);
   expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect(png.readUInt32BE(16)).toBe(640);
   expect(png.readUInt32BE(20)).toBe(360);
+  await preview.getByRole("button", { name: "Close capture preview" }).click();
   const capabilities = await page.evaluate(() => ({
     api: typeof MediaRecorder !== "undefined",
     formats:
@@ -219,7 +254,43 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     await second
       .getByRole("button", { name: "Stop recording Camera 2", exact: true })
       .click();
+    const previewVideo = preview.getByLabel("Recorded clip preview");
+    await expect
+      .poll(() =>
+        previewVideo.evaluate(
+          (element) => (element as HTMLVideoElement).videoWidth,
+        ),
+      )
+      .toBe(640);
+    await previewVideo.evaluate((element) =>
+      (element as HTMLVideoElement).play(),
+    );
+    await expect
+      .poll(() =>
+        previewVideo.evaluate(
+          (element) => (element as HTMLVideoElement).currentTime,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await preview
+      .getByRole("button", { name: "Photos / Share", exact: true })
+      .click();
+    const shared = (await page.evaluate(() =>
+      Reflect.get(window, "qaShared"),
+    )) as { name: string; type: string }[];
+    if (
+      capabilities.formats.includes("video/mp4;codecs=avc1.42E01E,mp4a.40.2")
+    ) {
+      expect(shared[0].name).toMatch(/\.mp4$/);
+      expect(shared[0].type).toContain("video/mp4");
+    }
+    await preview
+      .getByRole("link", { name: "Save to Files", exact: true })
+      .click();
     await verifyClip(await clipDownload);
+    await preview
+      .getByRole("button", { name: "Close capture preview" })
+      .click();
     await expect(
       second.getByLabel("Camera 2 quality", { exact: true }),
     ).toBeEnabled();
