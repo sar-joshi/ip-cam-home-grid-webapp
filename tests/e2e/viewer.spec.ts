@@ -186,26 +186,56 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect(png.readUInt32BE(16)).toBe(640);
   expect(png.readUInt32BE(20)).toBe(360);
-  await second
-    .getByRole("button", { name: "Record Camera 2", exact: true })
-    .click();
-  await expect(
-    second.getByLabel("Camera 2 quality", { exact: true }),
-  ).toBeDisabled();
-  await expect(
-    second.getByRole("button", { name: "Mute Camera 2", exact: true }),
-  ).toBeDisabled();
-  await expect(second.locator(".capture-message")).toContainText("0:02", {
-    timeout: 8000,
-  });
-  const clipDownload = page.waitForEvent("download");
-  await second
-    .getByRole("button", { name: "Stop recording Camera 2", exact: true })
-    .click();
-  await verifyClip(await clipDownload);
-  await expect(
-    second.getByLabel("Camera 2 quality", { exact: true }),
-  ).toBeEnabled();
+  const capabilities = await page.evaluate(() => ({
+    api: typeof MediaRecorder !== "undefined",
+    formats:
+      typeof MediaRecorder === "undefined"
+        ? []
+        : [
+            "video/webm;codecs=vp8,opus",
+            "video/webm",
+            "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+            "video/mp4",
+          ].filter((type) => MediaRecorder.isTypeSupported(type)),
+  }));
+  console.log("Recording capabilities:", JSON.stringify(capabilities));
+  const canRecord = capabilities.formats.length > 0;
+  if (canRecord) {
+    await second
+      .getByRole("button", { name: "Record Camera 2", exact: true })
+      .click();
+    await expect(
+      second.getByLabel("Camera 2 quality", { exact: true }),
+      (await second.locator(".capture-message").textContent()) ??
+        "Preparing recording",
+    ).toBeDisabled();
+    await expect(
+      second.getByRole("button", { name: "Mute Camera 2", exact: true }),
+    ).toBeDisabled();
+    await expect(second.locator(".capture-message")).toContainText("0:02", {
+      timeout: 8000,
+    });
+    const clipDownload = page.waitForEvent("download");
+    await second
+      .getByRole("button", { name: "Stop recording Camera 2", exact: true })
+      .click();
+    await verifyClip(await clipDownload);
+    await expect(
+      second.getByLabel("Camera 2 quality", { exact: true }),
+    ).toBeEnabled();
+  } else {
+    await second
+      .getByRole("button", { name: "Record Camera 2", exact: true })
+      .click();
+    await expect(second.locator(".capture-message")).toHaveText(
+      capabilities.api
+        ? "This browser cannot record this video format."
+        : "Recording is unavailable in this browser.",
+    );
+    await expect(
+      second.getByLabel("Camera 2 quality", { exact: true }),
+    ).toBeEnabled();
+  }
   expect(
     await second
       .locator("video")
@@ -229,18 +259,20 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     path: testInfo.outputPath("capture-controls.png"),
     fullPage: true,
   });
-  await second
-    .getByRole("button", { name: "Mute Camera 2", exact: true })
-    .click();
-  await second
-    .getByRole("button", { name: "Record Camera 2", exact: true })
-    .click();
-  await expect(second.locator(".capture-message")).toContainText("0:01", {
-    timeout: 8000,
-  });
-  const lockedClip = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Lock", exact: true }).click();
-  await verifyClip(await lockedClip, false);
+  if (canRecord) {
+    await second
+      .getByRole("button", { name: "Mute Camera 2", exact: true })
+      .click();
+    await second
+      .getByRole("button", { name: "Record Camera 2", exact: true })
+      .click();
+    await expect(second.locator(".capture-message")).toContainText("0:01", {
+      timeout: 8000,
+    });
+    const lockedClip = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Lock", exact: true }).click();
+    await verifyClip(await lockedClip, false);
+  } else await page.getByRole("button", { name: "Lock", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   expect((await context.request.get("/api/bootstrap")).status()).toBe(401);
   expect(errors).toEqual([]);
