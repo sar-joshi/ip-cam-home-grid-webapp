@@ -148,6 +148,7 @@ await gateway.listen({ host: "127.0.0.1", port: config.port });
 mkdirSync(".tools", { recursive: true });
 writeFileSync(".tools/test-token", token, { mode: 0o600 });
 writeFileSync(".tools/test-stack.pid", String(process.pid), { mode: 0o600 });
+writeFileSync(".tools/test-state-dir", dir, { mode: 0o600 });
 // Never create a frontend env file or overwrite the user's real setup.
 const web = spawn(
   "npm",

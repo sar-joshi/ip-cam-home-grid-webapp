@@ -11,18 +11,26 @@ import { Brand, Icon } from "./icon";
 import type { PlaybackStatus } from "@/lib/playback";
 import { downloadCapture, type CaptureFile } from "@/lib/capture";
 import Image from "next/image";
+import dynamic from "next/dynamic";
+const NvrSettings = dynamic(
+  () => import("./nvr-settings").then((module) => module.NvrSettings),
+  { ssr: false },
+);
 
 interface SavedCapture extends CaptureFile {
   url: string;
 }
 
 export function Viewer({
-  cameras,
+  cameras: initialCameras,
   initialPreferences,
 }: {
   cameras: Camera[];
   initialPreferences: Preferences;
 }) {
+  const [cameras, setCameras] = useState(initialCameras);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [recordingCount, setRecordingCount] = useState(0);
   const [preferences, setPreferences] = useState(initialPreferences);
   const [focused, setFocused] = useState<string | null>(null);
   const [chooser, setChooser] = useState(false);
@@ -35,6 +43,9 @@ export function Viewer({
   const alive = useRef(true);
   const saveQueue = useRef(Promise.resolve());
   const pendingWrites = useRef(0);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const recordingStops = useRef(new Map<string, () => Promise<void>>());
   const captured = useRef<SavedCapture[]>([]);
   const captureDialog = useRef<HTMLDialogElement>(null);
@@ -46,6 +57,7 @@ export function Viewer({
     (camera: string, stop?: () => Promise<void>) => {
       if (stop) recordingStops.current.set(camera, stop);
       else recordingStops.current.delete(camera);
+      if (alive.current) setRecordingCount(recordingStops.current.size);
     },
     [],
   );
@@ -202,12 +214,17 @@ export function Viewer({
           }
         });
     }, 450);
+    saveTimer.current = timer;
     return () => clearTimeout(timer);
   }, [preferences]);
   useEffect(() => {
     alive.current = true;
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !captureDialog.current?.open) {
+      if (
+        event.key === "Escape" &&
+        !captureDialog.current?.open &&
+        !document.querySelector(".nvr-settings[open]")
+      ) {
         setFocused(null);
         setChooser(false);
       }
@@ -390,24 +407,41 @@ export function Viewer({
                           <Icon name="close" size={16} />
                         </button>
                       </div>
-                      {cameras.map((camera) => (
-                        <label key={camera.id}>
-                          <input
-                            type="checkbox"
-                            checked={preferences.slots.includes(camera.id)}
-                            onChange={() => select(camera.id)}
-                          />
-                          <span>{camera.name}</span>
-                          <span className="subtle">
-                            {camera.channel.toString().padStart(2, "0")}
-                          </span>
-                        </label>
-                      ))}
+                      {cameras
+                        .filter((camera) => camera.enabled !== false)
+                        .map((camera) => (
+                          <label key={camera.id}>
+                            <input
+                              type="checkbox"
+                              checked={preferences.slots.includes(camera.id)}
+                              onChange={() => select(camera.id)}
+                            />
+                            <span>{camera.name}</span>
+                            <span className="subtle">
+                              {camera.channel.toString().padStart(2, "0")}
+                            </span>
+                          </label>
+                        ))}
                     </section>
                   ) : null}
                 </div>
               </>
             )}
+            <button
+              className="secondary"
+              disabled={recordingCount > 0}
+              title={
+                recordingCount
+                  ? "Finish recording before opening setup"
+                  : "Configure the NVR and cameras"
+              }
+              onClick={() => {
+                setChooser(false);
+                setSetupOpen(true);
+              }}
+            >
+              NVR &amp; cameras
+            </button>
             <button
               className="secondary"
               disabled={!preferences.slots.length}
@@ -525,6 +559,32 @@ export function Viewer({
               </p>
             ) : null}
           </section>
+        ) : null}
+        {setupOpen ? (
+          <NvrSettings
+            onClose={() => setSetupOpen(false)}
+            beforeSave={async () => {
+              clearTimeout(saveTimer.current);
+              await saveQueue.current.catch(() => {});
+              const value = JSON.stringify(prefsRef.current);
+              const response = await fetch("/api/preferences", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: value,
+              });
+              if (!response.ok)
+                throw new Error("Preferences could not be saved");
+              savedRef.current = value;
+            }}
+            onApplied={(settings, preferences) => {
+              savedRef.current = JSON.stringify(preferences);
+              prefsRef.current = preferences;
+              setCameras(settings.cameras);
+              setPreferences(preferences);
+              setFocused(null);
+              setSaveStatus("Saved");
+            }}
+          />
         ) : null}
         {preview ? (
           <dialog

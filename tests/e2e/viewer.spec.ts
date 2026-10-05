@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixture.ts";
 import { AxeBuilder } from "@axe-core/playwright";
 import { defaults } from "@homegrid/shared";
 import { readFile } from "node:fs/promises";

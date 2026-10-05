@@ -10,6 +10,8 @@ const routes: Record<string, string> = {
   "GET bootstrap": "/internal/bootstrap",
   "PUT preferences": "/internal/preferences",
   "POST heartbeat": "/internal/heartbeat",
+  "GET settings": "/internal/settings",
+  "PUT settings": "/internal/settings",
 };
 async function boundedBody(request: NextRequest): Promise<string> {
   const reader = request.body?.getReader();

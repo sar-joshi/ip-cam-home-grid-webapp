@@ -762,6 +762,70 @@ input[type="checkbox"] {
 .capture-dialog::backdrop {
   background: #000b;
 }
+.nvr-settings fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.nvr-settings label {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.nvr-settings input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 16px;
+}
+.setup-camera-row,
+.setup-camera-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 85px 48px;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.setup-camera-heading {
+  color: var(--muted);
+  font-size: 13px;
+}
+.setup-camera-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+  justify-self: center;
+}
+.nvr-settings .setup-confirm {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 500px) {
+  .nvr-settings label {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .setup-camera-row,
+  .setup-camera-heading {
+    grid-template-columns: minmax(0, 1fr) 70px 32px;
+    gap: 8px;
+  }
+}
 .capture-dialog-heading,
 .capture-dialog-actions {
   display: flex;

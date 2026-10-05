@@ -11,6 +11,7 @@ export const cameraSchema = z.object({
   id: z.string().regex(/^cam-[1-6]$/),
   name: z.string().trim().min(1).max(48),
   channel: z.number().int().min(1).max(64),
+  enabled: z.boolean().optional(),
 });
 export type Camera = z.infer<typeof cameraSchema>;
 // This household's channels 1–2 provide Sub 2; channels 3–6 provide Sub 1.
@@ -52,7 +53,7 @@ export const preferencesSchema = z
 export type Preferences = z.infer<typeof preferencesSchema>;
 export const defaults = (cameras: Camera[]): Preferences => ({
   version: 1,
-  slots: cameras.map((c) => c.id),
+  slots: cameras.filter((c) => c.enabled !== false).map((c) => c.id),
   columns: 3,
   cameras: Object.fromEntries(
     cameras.map((c) => [c.id, { quality: "1", muted: true, stopped: false }]),
@@ -65,7 +66,9 @@ export function normalizePreferences(
   const base = defaults(cameras);
   const result = preferencesSchema.safeParse(value);
   if (!result.success) return base;
-  const available = new Set(cameras.map((c) => c.id));
+  const available = new Set(
+    cameras.filter((c) => c.enabled !== false).map((c) => c.id),
+  );
   return {
     ...result.data,
     slots: result.data.slots.filter((id) => available.has(id)),
@@ -85,3 +88,33 @@ export function swapSlots(slots: string[], from: string, to: string): string[] {
   [copy[a], copy[b]] = [copy[b], copy[a]];
   return copy;
 }
+
+export const setupViewSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  nvr: z.object({
+    host: z.string().min(1).max(255),
+    port: z.number().int().min(1).max(65535),
+    credentialsSaved: z.boolean(),
+  }),
+  cameras: camerasSchema,
+});
+export type SetupView = z.infer<typeof setupViewSchema>;
+export const setupUpdateSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    nvr: z
+      .object({
+        host: z.string().trim().min(1).max(255),
+        port: z.number().int().min(1).max(65535),
+        username: z.string().max(256),
+        password: z.string().max(256),
+      })
+      .strict(),
+    cameras: camerasSchema.refine(
+      (list) => new Set(list.map((c) => c.channel)).size === list.length,
+      "Channel numbers must be unique",
+    ),
+    householdPassword: z.string().min(1).max(128),
+  })
+  .strict();
+export type SetupUpdate = z.infer<typeof setupUpdateSchema>;

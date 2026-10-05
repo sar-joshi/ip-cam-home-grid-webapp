@@ -4,6 +4,7 @@ import {
   preferencesSchema,
   qualitySchema,
   normalizePreferences,
+  setupUpdateSchema,
 } from "@homegrid/shared";
 import { z } from "zod";
 import type Database from "better-sqlite3";
@@ -11,6 +12,7 @@ import type { Config } from "./config.ts";
 import { makeAuth, HOUSEHOLD_EMAIL } from "./auth.ts";
 import { consumeLimit, getPreferences, savePreferences } from "./database.ts";
 import type { Media } from "./media.ts";
+import { SetupSettings, SettingsError } from "./settings.ts";
 
 const uuid = z.string().uuid();
 export function makeServer(
@@ -25,6 +27,7 @@ export function makeServer(
     connectionTimeout: 30000,
   });
   const auth = makeAuth(config, db);
+  const settings = new SetupSettings(config, db, media);
   server.addContentTypeParser(
     ["application/sdp", "application/trickle-ice-sdpfrag"],
     { parseAs: "string" },
@@ -136,6 +139,57 @@ export function makeServer(
     );
     return { ok: true };
   });
+  server.get("/internal/settings", async (request, reply) => {
+    if (!(await session(request.headers.cookie)))
+      return reply.code(401).send({ error: "Unlock HomeGrid to continue." });
+    return settings.view();
+  });
+  server.put("/internal/settings", async (request, reply) => {
+    const current = await session(request.headers.cookie);
+    if (!current) return reply.code(401).send({ error: "Unauthorized" });
+    const input = setupUpdateSchema.safeParse(request.body);
+    if (!input.success)
+      return reply.code(400).send({
+        error:
+          "Check the address, port, camera names and unique channel numbers.",
+      });
+    if (!consumeLimit(db, "household-login", 5, 60000))
+      return reply
+        .code(429)
+        .header("Retry-After", "60")
+        .send({ error: "Too many attempts. Try again in a minute." });
+    try {
+      await auth.api.verifyPassword({
+        headers: authHeaders(request.headers.cookie),
+        body: { password: input.data.householdPassword },
+      });
+    } catch {
+      return reply.code(403).send({
+        error:
+          "Household password not accepted. Unlock again if your session expired.",
+      });
+    }
+    if (!(await session(request.headers.cookie)))
+      return reply.code(401).send({ error: "Unauthorized" });
+    try {
+      return await settings.apply(
+        input.data,
+        current.user.id,
+        () =>
+          !!db
+            .prepare(
+              "SELECT id FROM session WHERE id = ? AND userId = ? AND expiresAt > ?",
+            )
+            .get(current.session.id, current.user.id, Date.now()),
+      );
+    } catch (error) {
+      if (error instanceof SettingsError)
+        return reply.code(error.status).send({ error: error.message });
+      return reply.code(503).send({
+        error: "Setup could not be applied. Previous settings were kept.",
+      });
+    }
+  });
   server.post("/internal/heartbeat", async (request, reply) => {
     const current = await session(request.headers.cookie);
     if (!current) return reply.code(401).send({ error: "Unauthorized" });
@@ -152,7 +206,9 @@ export function makeServer(
     if (!current) return reply.code(401).send({ error: "Unauthorized" });
     const params = request.params as { camera: string; quality: string };
     if (
-      !config.cameras.some((c) => c.id === params.camera) ||
+      !config.cameras.some(
+        (c) => c.id === params.camera && c.enabled !== false,
+      ) ||
       !qualitySchema.safeParse(params.quality).success
     )
       return reply.code(404).send({ error: "Camera not found" });
