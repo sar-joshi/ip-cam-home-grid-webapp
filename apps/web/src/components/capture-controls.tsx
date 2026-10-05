@@ -65,6 +65,10 @@ export function CaptureControls({
     onBusy(true);
     setMessage("Preparing recording…");
     abort.current = new AbortController();
+    onRecorder(camera.id, async () => {
+      abort.current?.abort();
+      await recorder.current?.stop();
+    });
     try {
       const current = await record(
         video.current,
@@ -104,6 +108,7 @@ export function CaptureControls({
       );
     } catch (value) {
       error(value);
+      onRecorder(camera.id);
       onBusy(false);
     } finally {
       if (alive.current) setBusy(false);

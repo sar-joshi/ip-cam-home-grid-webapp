@@ -23,6 +23,8 @@ export class Media {
   private cleaning = false;
   private cleanupTask?: Promise<void>;
   private pending = new Map<string, number>();
+  private generation = 0;
+  private ready = false;
   constructor(
     private config: Config,
     private db: Database.Database,
@@ -111,6 +113,20 @@ export class Media {
       this.cleanupTask = this.cleanup().catch(() => {});
     }, 5000);
     this.timer.unref();
+    this.ready = true;
+  }
+  async reconfigure(config: Config) {
+    const old = this.config;
+    await this.close();
+    this.config = config;
+    try {
+      await this.start();
+    } catch {
+      await this.close();
+      this.config = old;
+      await this.start();
+      throw new Error("Media configuration could not be applied");
+    }
   }
   private headers() {
     return {
@@ -123,6 +139,8 @@ export class Media {
     quality: string,
     sdp: string,
   ) {
+    if (!this.ready) throw new Error("Media gateway is restarting");
+    const generation = this.generation;
     const count = this.db
       .prepare("SELECT COUNT(*) as n FROM homegrid_media WHERE session_id = ?")
       .get(sessionId) as { n: number };
@@ -147,6 +165,8 @@ export class Media {
       if (!location || !expected.test(location))
         throw new Error("Unexpected media session response");
       const answer = await upstream.text();
+      if (!this.ready || generation !== this.generation)
+        throw new Error("Media configuration changed");
       const id = randomUUID();
       this.db
         .prepare("INSERT INTO homegrid_media VALUES (?, ?, ?, ?)")
@@ -238,9 +258,25 @@ export class Media {
     }
   }
   async close() {
+    this.ready = false;
+    this.generation++;
     clearInterval(this.timer);
     await this.cleanupTask;
-    this.process?.kill("SIGTERM");
+    const child = this.process;
+    this.process = undefined;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve();
+        }, 3000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        child.kill("SIGTERM");
+      });
+    }
     try {
       unlinkSync(this.configPath);
     } catch {

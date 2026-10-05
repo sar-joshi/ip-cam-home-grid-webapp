@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixture.ts";
 import { defaults } from "@homegrid/shared";
 
 test("fast Sub 2 startup, autoplay recovery, background continuity and mobile columns", async ({

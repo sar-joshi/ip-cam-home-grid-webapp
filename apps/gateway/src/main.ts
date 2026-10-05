@@ -5,6 +5,7 @@ import { openDatabase } from "./database.ts";
 import { makeAuth, migrateAuth } from "./auth.ts";
 import { Media } from "./media.ts";
 import { makeServer } from "./server.ts";
+import { ConfigurationStore } from "./settings.ts";
 
 if (existsSync("gateway.env")) loadEnvFile("gateway.env");
 process.umask(0o077);
@@ -12,6 +13,7 @@ let stop: (() => Promise<void>) | undefined;
 try {
   const config = readConfig();
   const db = openDatabase(config.stateDir);
+  new ConfigurationStore(config, db).load();
   await migrateAuth(makeAuth(config, db));
   if (!db.prepare("SELECT id FROM user LIMIT 1").get())
     throw new Error("Run npm run setup to create the household password first");

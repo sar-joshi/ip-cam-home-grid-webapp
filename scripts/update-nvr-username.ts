@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { parseEnv } from "node:util";
 import { z } from "zod";
 import { readConfig } from "../apps/gateway/src/config.ts";
+import { openDatabase } from "../apps/gateway/src/database.ts";
+import { ConfigurationStore } from "../apps/gateway/src/settings.ts";
 
 export const usernameForm = {
   title: "Correct NVR username",
@@ -19,6 +21,19 @@ export async function updateNvrUsername(input: unknown) {
     .object({ nvrUser: z.string().min(1).max(256) })
     .parse(input);
   const existing = readFileSync("gateway.env", "utf8");
+  const config = readConfig(parseEnv(existing));
+  const db = openDatabase(config.stateDir);
+  try {
+    const store = new ConfigurationStore(config, db);
+    if (store.revision() > 0) {
+      store.load();
+      config.nvrUser = nvrUser;
+      store.save(config, store.revision());
+      return;
+    }
+  } finally {
+    db.close();
+  }
   const updated =
     existing
       .split("\n")

@@ -21,6 +21,7 @@ export function openDatabase(stateDir: string) {
     CREATE TABLE IF NOT EXISTS homegrid_media (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, location TEXT NOT NULL, expires INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS homegrid_media_session ON homegrid_media(session_id);
     CREATE TABLE IF NOT EXISTS homegrid_limit (key TEXT PRIMARY KEY, count INTEGER NOT NULL, starts INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS homegrid_configuration (id INTEGER PRIMARY KEY CHECK(id = 1), revision INTEGER NOT NULL, value TEXT NOT NULL);
   `);
   return db;
 }
