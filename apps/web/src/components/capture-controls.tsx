@@ -81,7 +81,7 @@ export function CaptureControls({
           if (alive.current) {
             setRecording(false);
             onBusy(false);
-            setMessage("Clip ready to save.");
+            setMessage("");
           }
         },
         (message) => error(new Error(message)),
@@ -125,7 +125,7 @@ export function CaptureControls({
           if (!video.current) return;
           try {
             onCapture(await snapshot(video.current, camera.name));
-            setMessage("Snapshot ready to save.");
+            setMessage("");
           } catch (value) {
             error(value);
           }
@@ -149,7 +149,7 @@ export function CaptureControls({
       >
         <Icon name={recording ? "stop" : "record"} />
       </button>
-      {message ? (
+      {recording || message ? (
         <span
           className="capture-message"
           aria-live={recording ? "off" : "polite"}
