@@ -235,6 +235,7 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   expect(await page.evaluate(() => Reflect.get(window, "qaShared"))).toEqual([
     { name: expect.stringMatching(/\.png$/), type: "image/png" },
   ]);
+  await expect(second.locator(".capture-message")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   const stillDownload = page.waitForEvent("download");
   await preview
@@ -246,7 +247,9 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect(png.readUInt32BE(16)).toBe(640);
   expect(png.readUInt32BE(20)).toBe(360);
+  await expect(second.locator(".capture-message")).toHaveCount(0);
   await preview.getByRole("button", { name: "Close capture preview" }).click();
+  await expect(second.locator(".capture-message")).toHaveCount(0);
   await page
     .getByRole("button", {
       name: `Preview ${still.suggestedFilename()}`,
@@ -260,6 +263,13 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     ),
   ).toBe(640);
   await preview.getByRole("button", { name: "Close capture preview" }).click();
+  await second
+    .getByRole("button", { name: "Snapshot Camera 2", exact: true })
+    .click();
+  await expect(previewImage).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(preview).not.toBeVisible();
+  await expect(second.locator(".capture-message")).toHaveCount(0);
   const capabilities = await page.evaluate(() => ({
     api: typeof MediaRecorder !== "undefined",
     formats:
@@ -289,6 +299,16 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     await expect(second.locator(".capture-message")).toContainText("0:02", {
       timeout: 8000,
     });
+    await second
+      .getByRole("button", { name: "Snapshot Camera 2", exact: true })
+      .click();
+    await expect(previewImage).toBeVisible();
+    await preview
+      .getByRole("button", { name: "Close capture preview" })
+      .click();
+    await expect(second.locator(".capture-message")).toContainText(
+      "Recording video and audio.",
+    );
     const clipDownload = page.waitForEvent("download");
     await second
       .getByRole("button", { name: "Stop recording Camera 2", exact: true })
@@ -323,13 +343,16 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
       expect(shared[0].name).toMatch(/\.mp4$/);
       expect(shared[0].type).toContain("video/mp4");
     }
+    await expect(second.locator(".capture-message")).toHaveCount(0);
     await preview
       .getByRole("link", { name: "Save to Files", exact: true })
       .click();
     await verifyClip(await clipDownload);
+    await expect(second.locator(".capture-message")).toHaveCount(0);
     await preview
       .getByRole("button", { name: "Close capture preview" })
       .click();
+    await expect(second.locator(".capture-message")).toHaveCount(0);
     await expect(
       second.getByLabel("Camera 2 quality", { exact: true }),
     ).toBeEnabled();
