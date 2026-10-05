@@ -46,6 +46,14 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const blockedImages: string[] = [];
+    Reflect.set(window, "qaBlockedImages", blockedImages);
+    document.addEventListener("securitypolicyviolation", (event) => {
+      if (event.effectiveDirective === "img-src")
+        blockedImages.push(event.blockedURI.split(":")[0]);
+    });
+  });
   // Reset this synthetic household before the successful login response reaches
   // the UI, so fixture setup never opens streams just to discard them on reload.
   await page.route("**/api/auth/login", async (route) => {
@@ -182,12 +190,29 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     .evaluate(
       (video) => ((video as HTMLVideoElement).srcObject as MediaStream).id,
     );
-  const stillDownload = page.waitForEvent("download");
   await second
     .getByRole("button", { name: "Snapshot Camera 2", exact: true })
     .click();
   const preview = page.getByRole("dialog", { name: "Capture preview" });
-  await expect(preview.getByAltText("Captured camera snapshot")).toBeVisible();
+  const previewImage = preview.getByAltText("Captured camera snapshot");
+  await expect(previewImage).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        previewImage.evaluate((image) => ({
+          width: (image as HTMLImageElement).naturalWidth,
+          height: (image as HTMLImageElement).naturalHeight,
+        })),
+      { timeout: 5000 },
+    )
+    .toEqual({ width: 640, height: 360 });
+  expect(
+    await page.evaluate(() => Reflect.get(window, "qaBlockedImages")),
+  ).toEqual([]);
+  await previewImage.evaluate((image) => (image as HTMLImageElement).decode());
+  await preview.screenshot({
+    path: testInfo.outputPath("snapshot-preview.png"),
+  });
   await page.evaluate(() => {
     Object.defineProperty(navigator, "canShare", {
       configurable: true,
@@ -211,6 +236,7 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
     { name: expect.stringMatching(/\.png$/), type: "image/png" },
   ]);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  const stillDownload = page.waitForEvent("download");
   await preview
     .getByRole("link", { name: "Save to Files", exact: true })
     .click();
@@ -220,6 +246,19 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
   expect(png.readUInt32BE(16)).toBe(640);
   expect(png.readUInt32BE(20)).toBe(360);
+  await preview.getByRole("button", { name: "Close capture preview" }).click();
+  await page
+    .getByRole("button", {
+      name: `Preview ${still.suggestedFilename()}`,
+      exact: true,
+    })
+    .click();
+  await previewImage.evaluate((image) => (image as HTMLImageElement).decode());
+  expect(
+    await previewImage.evaluate(
+      (image) => (image as HTMLImageElement).naturalWidth,
+    ),
+  ).toBe(640);
   await preview.getByRole("button", { name: "Close capture preview" }).click();
   const capabilities = await page.evaluate(() => ({
     api: typeof MediaRecorder !== "undefined",
@@ -318,13 +357,26 @@ test("password gate, real WebRTC video, controls, persistence, focus and logout"
   await page.getByRole("button", { name: "Cameras 6", exact: true }).click();
   await page.getByRole("checkbox", { name: /Camera 6/ }).uncheck();
   await expect(page.getByRole("article")).toHaveCount(5);
-  await page.getByRole("button", { name: "Close camera selection" }).click();
-  await page.setViewportSize({ width: 390, height: 844 });
   expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
+    await page
+      .getByRole("region", { name: "Camera selection" })
+      .evaluate((chooser) => {
+        const box = chooser.getBoundingClientRect();
+        return box.left >= 0 && box.right <= innerWidth;
+      }),
   ).toBe(true);
+  await page.getByRole("button", { name: "Close camera selection" }).click();
+  await expect(
+    page.getByRole("button", { name: "Close camera selection" }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: testInfo.outputPath("capture-controls.png"),
