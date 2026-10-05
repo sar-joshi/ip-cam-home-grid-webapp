@@ -745,9 +745,6 @@ input[type="checkbox"] {
   .status {
     font-size: 10px;
   }
-  .camera-chooser {
-    right: -40px;
-  }
 }
 .capture-dialog {
   color: var(--text);
